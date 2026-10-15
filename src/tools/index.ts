@@ -10,6 +10,8 @@ import { searchTool } from "./search.js";
 import { writeTool } from "./write.js";
 import { editTool } from "./edit.js";
 import { mkdirTool } from "./mkdir.js";
+import { deleteTool } from "./delete.js";
+import { moveTool } from "./move.js";
 import type { ToolDefinition } from "./types.js";
 
 export const tools: ToolDefinition<any, any>[] = [
@@ -20,4 +22,6 @@ export const tools: ToolDefinition<any, any>[] = [
   writeTool,
   editTool,
   mkdirTool,
+  deleteTool,
+  moveTool,
 ];

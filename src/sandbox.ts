@@ -4,6 +4,7 @@
  * checks, and Hidden Entry matching. Tools must go through it.
  *
  * - `resolve(path)`        an existing entry (follows symlinks, must stay in Root)
+ * - `resolveEntry(path)`   an existing entry as itself (move/delete source; symlink = the link)
  * - `resolveForCreate(path)` an entry that may not exist yet (for write/mkdir/move targets)
  * - `children(dir)`        visible children of a folder (Hidden Entries and
  *                          out-of-Root / broken symlinks are skipped)
@@ -29,6 +30,14 @@ export interface Resolved {
   abs: string;
   /** Absolute real location (symlinks followed). For not-yet-existing entries: real parent + name. */
   real: string;
+}
+
+/** An entry located as itself (symlinks not followed on the last segment): real parent folder + name. */
+export interface Located extends Resolved {
+  /** Absolute location: real parent folder + entry name. Rename/trash this. */
+  at: string;
+  /** Root-relative Path of `at`. */
+  atPath: string;
 }
 
 export interface Child extends Resolved {
@@ -122,6 +131,19 @@ export class Sandbox {
     }
     this.checkReal(real, rel);
     return { path: rel, abs, real };
+  }
+
+  /**
+   * Resolve an existing entry to be moved or trashed as itself (move/delete source).
+   * Like `resolve`, but also locates the entry through its real parent folder without
+   * following the entry itself, so a symlink is handled as the link, not its target.
+   * Refuses the Root itself.
+   */
+  async resolveEntry(input: string): Promise<Located> {
+    const resolved = await this.resolve(input);
+    if (resolved.path === "") throw new ToolError("forbidden", "the Root itself cannot be moved or deleted", [""]);
+    const at = path.join(await realpath(path.dirname(resolved.abs)), path.basename(resolved.abs));
+    return { ...resolved, at, atPath: this.checkReal(at, resolved.path) };
   }
 
   /**
