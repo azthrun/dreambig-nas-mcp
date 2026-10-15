@@ -18,6 +18,8 @@ export interface AuditEvent {
   trashed?: string[];
   /** Trash-relative Paths permanently removed by a Trash purge. */
   purged?: string[];
+  /** Root-relative Paths of leftover temp files removed at startup. */
+  removed?: string[];
   /** Short machine-readable reason, e.g. "unauthorized", "forbidden". */
   reason?: string;
   /** Human-readable detail. */

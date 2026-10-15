@@ -1,5 +1,6 @@
 import { ConfigError, loadConfig } from "./config.js";
 import { startHttpServer } from "./http.js";
+import { cleanupTempFiles } from "./temp-cleanup.js";
 import { startTrashPurge } from "./trash-purge.js";
 
 // Never run as root (spec: the container runs as a dedicated DSM user). No override on purpose.
@@ -22,6 +23,8 @@ try {
 }
 
 const stopPurge = await startTrashPurge(config);
+// In the background: on a large Root the walk takes a while; writes wait for it (write lock).
+void cleanupTempFiles(config);
 const server = await startHttpServer(config);
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {

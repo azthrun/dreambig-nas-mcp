@@ -38,7 +38,7 @@ export const writeTool = defineTool({
     await atomicWriteText(target.real, content, {
       beforeRename: async () => {
         await sandbox.recheck(target.real, target.path);
-        if (existing) trashedAt = await trash.moveToTrash({ path: sandbox.relativePath(target.real), abs: target.real });
+        if (existing) trashedAt = await trash.copyToTrash({ path: sandbox.relativePath(target.real), abs: target.real });
       },
     });
     audit({ result: "ok", tool: "write", paths: [target.path], ...(trashedAt ? { trashed: [trashedAt] } : {}) });
