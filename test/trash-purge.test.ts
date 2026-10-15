@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import { rm, utimes } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { makeTempDir, populate, runServerExpectingExit, startServer, type TestServer } from "./harness.js";
+import { makeTempDir, populate, runServerExpectingExit, startServer, TEST_TOKEN, type TestServer } from "./harness.js";
 import { allEntries, TRASH_DIR } from "./trash-helpers.js";
 
 /** Trash date folder name for `daysAgo` days before today (local time, like the server). */
@@ -107,7 +107,7 @@ describe("retention config", () => {
   it("refuses to start with an invalid retention", async () => {
     const root = await makeTempDir();
     try {
-      const r = await runServerExpectingExit({ NAS_MCP_ROOT: root, NAS_MCP_TOKEN: "x", NAS_MCP_TRASH_RETENTION_DAYS: "-1" });
+      const r = await runServerExpectingExit({ NAS_MCP_ROOT: root, NAS_MCP_TOKEN: TEST_TOKEN, NAS_MCP_TRASH_RETENTION_DAYS: "-1" });
       expect(r.code).toBe(1);
       expect(r.stderr).toContain("NAS_MCP_TRASH_RETENTION_DAYS");
     } finally {
