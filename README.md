@@ -140,11 +140,11 @@ Desktop's built-in Connectors connect from Anthropic's cloud and can't reach a L
 
 ## Settings
 
-All settings are env vars, read at startup; the server refuses to start with a clear `Config error` if one is missing or invalid. Copy [`.env.example`](.env.example) to `.env` (it lists every one of them). Sizes are in bytes.
+All settings are env vars, read at startup; the server refuses to start with a clear `Config error` if one is missing or invalid (including a token that is still the placeholder or shorter than 16 characters). It also refuses to run as root (UID 0). Copy [`.env.example`](.env.example) to `.env` (it lists every one of them). Sizes are in bytes.
 
 | Env var | Default | Meaning |
 | --- | --- | --- |
-| `NAS_MCP_TOKEN` | (required) | Bearer token every `/mcp` request must send as `Authorization: Bearer <token>`. Generate with `openssl rand -hex 32`. |
+| `NAS_MCP_TOKEN` | (required) | Bearer token every `/mcp` request must send as `Authorization: Bearer <token>`. Generate with `openssl rand -hex 32`. At least 16 characters; the `.env.example` placeholder is refused. |
 | `NAS_MCP_ROOT` | (required; compose: `/data`) | The Root as seen inside the container. Fixed by `compose.yaml`; set only when running outside the container. |
 | `NAS_MCP_PORT` | `8080` | Listen port inside the container (`0` = pick a free port). Fixed by `compose.yaml`. |
 | `NAS_MCP_HOST` | `0.0.0.0` | Listen address. Fixed by `compose.yaml`. |
@@ -183,7 +183,7 @@ Node 24, TypeScript, `@modelcontextprotocol/sdk`.
 npm ci
 npm test          # builds dist/ and runs the integration tests (MCP over HTTP against a temp Root)
 npm run typecheck
-NAS_MCP_TOKEN=dev NAS_MCP_ROOT=/tmp/root npm run dev
+NAS_MCP_TOKEN="$(openssl rand -hex 32)" NAS_MCP_ROOT=/tmp/root npm run dev
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs tests and an image smoke test on every PR, and pushes the image to GHCR from `main`.

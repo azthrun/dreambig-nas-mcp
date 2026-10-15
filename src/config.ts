@@ -60,6 +60,25 @@ function list(env: Env, name: string): string[] {
     .filter(Boolean);
 }
 
+/** Shortest accepted bearer token. */
+export const MIN_TOKEN_LENGTH = 16;
+/** Placeholder values from .env.example / docs that must never be used as the real token. */
+const PLACEHOLDER_TOKENS = ["change-me", "<token>", "<placeholder>"];
+
+function validateToken(token: string): string {
+  if (PLACEHOLDER_TOKENS.includes(token.toLowerCase()) || /^<.*>$/.test(token)) {
+    throw new ConfigError(
+      `NAS_MCP_TOKEN is still the .env.example placeholder ("${token}"); generate a real one with: openssl rand -hex 32`,
+    );
+  }
+  if (token.length < MIN_TOKEN_LENGTH) {
+    throw new ConfigError(
+      `NAS_MCP_TOKEN is too short (${token.length} characters; at least ${MIN_TOKEN_LENGTH} required); generate one with: openssl rand -hex 32`,
+    );
+  }
+  return token;
+}
+
 function validateRoot(raw: string): string {
   let st;
   try {
@@ -77,7 +96,7 @@ function validateRoot(raw: string): string {
 }
 
 export function loadConfig(env: Env = process.env): Config {
-  const token = required(env, "NAS_MCP_TOKEN");
+  const token = validateToken(required(env, "NAS_MCP_TOKEN"));
   const root = validateRoot(required(env, "NAS_MCP_ROOT"));
   return {
     root,
