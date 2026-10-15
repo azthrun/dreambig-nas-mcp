@@ -2,7 +2,7 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { atomicWriteText, mkdirs } from "../atomic-write.js";
-import { audit } from "../audit.js";
+import { auditOk } from "../audit.js";
 import { ToolError } from "../errors.js";
 import { defineTool, structured } from "./types.js";
 
@@ -36,13 +36,12 @@ export const writeTool = defineTool({
     await mkdirs(path.dirname(target.real), target.path);
     let trashedAt: string | undefined;
     await atomicWriteText(target.real, content, {
-      beforeRename: existing
-        ? async () => {
-            trashedAt = await trash.moveToTrash({ path: sandbox.relativePath(target.real), abs: target.real });
-          }
-        : undefined,
+      beforeRename: async () => {
+        await sandbox.recheck(target.real, target.path);
+        if (existing) trashedAt = await trash.copyToTrash(target);
+      },
     });
-    audit({ result: "ok", tool: "write", paths: [target.path], ...(trashedAt ? { trashed: [trashedAt] } : {}) });
+    auditOk("write", [target.path], trashedAt ? [trashedAt] : undefined);
     return structured({ path: target.path, size: Buffer.byteLength(content), replaced: !!existing });
   },
 });

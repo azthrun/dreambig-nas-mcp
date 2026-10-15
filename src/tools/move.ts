@@ -2,7 +2,7 @@ import { lstat, rename } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { mkdirs } from "../atomic-write.js";
-import { audit } from "../audit.js";
+import { auditOk } from "../audit.js";
 import { ToolError } from "../errors.js";
 import { defineTool, structured } from "./types.js";
 
@@ -26,20 +26,16 @@ export const moveTool = defineTool({
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   async handler({ from, to, overwrite }, { sandbox, trash }) {
     const source = await sandbox.resolveEntry(from);
-    const target = await sandbox.resolveForCreate(to);
-    // Locate the target as itself (an existing symlink there is replaced, not written through).
-    const parent = path.dirname(target.path);
-    const parentReal = parent === "." ? sandbox.root : (await sandbox.resolveForCreate(parent)).real;
-    const targetAt = path.join(parentReal, path.basename(target.path));
-    const targetAtPath = sandbox.relativePath(targetAt);
+    // Located as itself: an existing symlink at the target is replaced, not written through.
+    const target = await sandbox.locateForCreate(to);
 
-    if (targetAt === source.at) {
+    if (target.selfAbs === source.selfAbs) {
       throw new ToolError("invalid", `${source.path} and ${target.path} are the same entry`, [source.path, target.path]);
     }
-    if (targetAt.startsWith(source.at + path.sep)) {
+    if (target.selfAbs.startsWith(source.selfAbs + path.sep)) {
       throw new ToolError("invalid", `cannot move ${source.path} into itself (${target.path})`, [source.path, target.path]);
     }
-    const [srcStat, existing] = await Promise.all([lstat(source.at), lstat(targetAt).catch(() => null)]);
+    const [srcStat, existing] = await Promise.all([lstat(source.selfAbs), lstat(target.selfAbs).catch(() => null)]);
     // Same inode under another name: a case-only rename on a case-insensitive filesystem.
     const sameEntry = !!existing && existing.ino === srcStat.ino && existing.dev === srcStat.dev;
     const replacing = !!existing && !sameEntry;
@@ -47,10 +43,12 @@ export const moveTool = defineTool({
       throw new ToolError("exists", `${target.path} already exists; pass overwrite: true to replace it`, [target.path]);
     }
 
-    await mkdirs(path.dirname(targetAt), target.path);
-    const trashed = replacing ? [await trash.moveToTrash({ path: targetAtPath, abs: targetAt })] : undefined;
-    await rename(source.at, targetAt);
-    audit({ result: "ok", tool: "move", paths: [source.path, target.path], ...(trashed ? { trashed } : {}) });
+    await mkdirs(path.dirname(target.selfAbs), target.path);
+    await sandbox.recheck(source.selfAbs, source.path);
+    await sandbox.recheck(target.selfAbs, target.path);
+    const trashed = replacing ? [await trash.moveToTrash(target)] : undefined;
+    await rename(source.selfAbs, target.selfAbs);
+    auditOk("move", [source.path, target.path], trashed);
     return structured({ from: source.path, to: target.path, replaced: replacing });
   },
 });

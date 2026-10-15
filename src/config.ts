@@ -35,6 +35,9 @@ export interface Config {
 
 export class ConfigError extends Error {}
 
+/** Name of the Trash folder at the top of the Root (fixed; not configurable). */
+export const TRASH_DIR_NAME = ".nas-mcp-trash";
+
 type Env = Record<string, string | undefined>;
 
 function required(env: Env, name: string): string {
@@ -60,6 +63,25 @@ function list(env: Env, name: string): string[] {
     .filter(Boolean);
 }
 
+/** Shortest accepted bearer token. */
+export const MIN_TOKEN_LENGTH = 16;
+/** Placeholder values from .env.example / docs that must never be used as the real token. */
+const PLACEHOLDER_TOKENS = ["change-me", "<token>", "<placeholder>"];
+
+function validateToken(token: string): string {
+  if (PLACEHOLDER_TOKENS.includes(token.toLowerCase()) || /^<.*>$/.test(token)) {
+    throw new ConfigError(
+      `NAS_MCP_TOKEN is still the .env.example placeholder ("${token}"); generate a real one with: openssl rand -hex 32`,
+    );
+  }
+  if (token.length < MIN_TOKEN_LENGTH) {
+    throw new ConfigError(
+      `NAS_MCP_TOKEN is too short (${token.length} characters; at least ${MIN_TOKEN_LENGTH} required); generate one with: openssl rand -hex 32`,
+    );
+  }
+  return token;
+}
+
 function validateRoot(raw: string): string {
   let st;
   try {
@@ -77,14 +99,14 @@ function validateRoot(raw: string): string {
 }
 
 export function loadConfig(env: Env = process.env): Config {
-  const token = required(env, "NAS_MCP_TOKEN");
+  const token = validateToken(required(env, "NAS_MCP_TOKEN"));
   const root = validateRoot(required(env, "NAS_MCP_ROOT"));
   return {
     root,
     token,
     port: int(env, "NAS_MCP_PORT", 8080, 0, 65535),
     host: env.NAS_MCP_HOST?.trim() || "0.0.0.0",
-    trashDirName: ".nas-mcp-trash",
+    trashDirName: TRASH_DIR_NAME,
     extraHiddenPatterns: list(env, "NAS_MCP_HIDDEN_PATTERNS"),
     readTextMaxBytes: int(env, "NAS_MCP_READ_TEXT_MAX_BYTES", 10 * 1024 * 1024, 1),
     readImageMaxBytes: int(env, "NAS_MCP_READ_IMAGE_MAX_BYTES", 20 * 1024 * 1024, 1),

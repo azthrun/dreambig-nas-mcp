@@ -18,6 +18,8 @@ export interface AuditEvent {
   trashed?: string[];
   /** Trash-relative Paths permanently removed by a Trash purge. */
   purged?: string[];
+  /** Root-relative Paths of leftover temp files removed at startup. */
+  removed?: string[];
   /** Short machine-readable reason, e.g. "unauthorized", "forbidden". */
   reason?: string;
   /** Human-readable detail. */
@@ -26,6 +28,11 @@ export interface AuditEvent {
 
 export function audit(event: AuditEvent): void {
   process.stdout.write(JSON.stringify({ type: "audit", time: new Date().toISOString(), ...event }) + "\n");
+}
+
+/** Audit a successful tool call; `trashed` is omitted when empty. */
+export function auditOk(tool: string, paths: string[], trashed?: string[]): void {
+  audit({ result: "ok", tool, paths, ...(trashed?.length ? { trashed } : {}) });
 }
 
 /** Non-audit informational line on stdout. */

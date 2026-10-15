@@ -140,11 +140,11 @@ Desktop's built-in Connectors connect from Anthropic's cloud and can't reach a L
 
 ## Settings
 
-All settings are env vars, read at startup; the server refuses to start with a clear `Config error` if one is missing or invalid. Copy [`.env.example`](.env.example) to `.env` (it lists every one of them). Sizes are in bytes.
+All settings are env vars, read at startup; the server refuses to start with a clear `Config error` if one is missing or invalid (including a token that is still the placeholder or shorter than 16 characters). It also refuses to run as root (UID 0). Copy [`.env.example`](.env.example) to `.env` (it lists every one of them). Sizes are in bytes.
 
 | Env var | Default | Meaning |
 | --- | --- | --- |
-| `NAS_MCP_TOKEN` | (required) | Bearer token every `/mcp` request must send as `Authorization: Bearer <token>`. Generate with `openssl rand -hex 32`. |
+| `NAS_MCP_TOKEN` | (required) | Bearer token every `/mcp` request must send as `Authorization: Bearer <token>`. Generate with `openssl rand -hex 32`. At least 16 characters; the `.env.example` placeholder is refused. |
 | `NAS_MCP_ROOT` | (required; compose: `/data`) | The Root as seen inside the container. Fixed by `compose.yaml`; set only when running outside the container. |
 | `NAS_MCP_PORT` | `8080` | Listen port inside the container (`0` = pick a free port). Fixed by `compose.yaml`. |
 | `NAS_MCP_HOST` | `0.0.0.0` | Listen address. Fixed by `compose.yaml`. |
@@ -164,9 +164,11 @@ All settings are env vars, read at startup; the server refuses to start with a c
 
 - **Root sandbox.** Every Path is relative to the Root. `..`, absolute paths, and symlinks resolving outside the Root are refused. The container runs as the dedicated DSM user, so DSM permissions are a second fence.
 - **Trash instead of delete.** `delete`, overwriting `write`/`move`, and `edit` move the old content to `.nas-mcp-trash/<YYYY-MM-DD>/<original Path>` at the top of the Root (name clashes get ` (2)`, ` (3)`, ...). Synology's own `#recycle` does not catch deletes made from inside a container, which is why this exists. Trash entries are purged after `NAS_MCP_TRASH_RETENTION_DAYS`; until then they still use disk space. The date folder is the container's local date, which is UTC unless you set `TZ`.
-- **Hidden Entries.** The Trash, `@eaDir`, `#recycle`, `#snapshot`, `.DS_Store`, and anything matching `NAS_MCP_HIDDEN_PATTERNS` never appear in `list`/`search` and are refused by every tool. Agents cannot see or restore from Trash.
+- **Hidden Entries.** The Trash, `@eaDir`, `#recycle`, `#snapshot`, `.DS_Store`, and anything matching `NAS_MCP_HIDDEN_PATTERNS` never appear in `list`/`search` and are refused by every tool. Names and patterns match case-insensitively and after Unicode NFC normalisation (`@EADIR`, `Family/TAXES` are hidden too), and a Path is checked by where it really lands (a symlink to the Root cannot be used to write into the Trash). Agents cannot see or restore from Trash.
+- **Crash-safe writes.** `write` and `edit` write a temp file next to the target (`.<name>.nas-mcp-tmp-<hex>`), sync it, put the old version in the Trash as a hard link (the original stays in place), then rename the temp file over the target in one step, so a crash leaves either the old or the new version, never neither. Temp files left by a crash are removed (and audited) at the next startup.
+- **One change at a time.** All changes to the Root (write, edit, mkdir, move, delete, Trash purge) run one after another inside the server, and nothing placed in the Trash ever replaces an existing Trash entry. Changes made to the Root from outside the server (SMB, File Station) while a call runs are only partly guarded against; avoid reorganising folders while an agent is working in them.
 - **Client prompts.** `delete`, `move`, `write` and `edit` carry MCP `destructiveHint`; read tools carry `readOnlyHint`, so clients can ask you before Destructive Operations.
-- **Audit log.** Every write and Destructive Operation, every rejected request (bad token, Path escape, Hidden Entry) and every Trash purge is one JSON line on stdout (`"type":"audit"`, `time`, `tool`, `paths`, `result`, `trashed`). View it in **Container Manager > Container >** `dreambig-nas-mcp-nas-mcp-1` **> Details > Log** (or **Project >** `dreambig-nas-mcp` **> Details > Log**).
+- **Audit log.** Every write and Destructive Operation (including failed ones), every rejected request (bad token, Path escape, Hidden Entry), every Trash purge and every startup temp-file cleanup is one JSON line on stdout (`"type":"audit"`, `time`, `tool`, `paths`, `result`, `trashed`). View it in **Container Manager > Container >** `dreambig-nas-mcp-nas-mcp-1` **> Details > Log** (or **Project >** `dreambig-nas-mcp` **> Details > Log**).
 
 ### Restore something from Trash
 
@@ -183,7 +185,7 @@ Node 24, TypeScript, `@modelcontextprotocol/sdk`.
 npm ci
 npm test          # builds dist/ and runs the integration tests (MCP over HTTP against a temp Root)
 npm run typecheck
-NAS_MCP_TOKEN=dev NAS_MCP_ROOT=/tmp/root npm run dev
+NAS_MCP_TOKEN="$(openssl rand -hex 32)" NAS_MCP_ROOT=/tmp/root npm run dev
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs tests and an image smoke test on every PR, and pushes the image to GHCR from `main`.

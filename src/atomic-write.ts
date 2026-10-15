@@ -1,12 +1,14 @@
 /**
  * Filesystem write helpers for tools.
  *
- * Atomic text write: content goes to a temp file in the target's folder, then
- * is renamed over the target, so readers never see a half-written file. The
- * temp file is removed on failure.
+ * Atomic text write: content goes to a temp file in the target's folder, is
+ * fsynced, then renamed over the target in one step, so readers never see a
+ * half-written file and a crash never leaves the target missing: either the
+ * old or the new version is there. The temp file is removed on failure; one
+ * left by a crash is removed at the next startup (see temp-cleanup.ts).
  */
 import { randomBytes } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { ToolError } from "./errors.js";
 
@@ -23,15 +25,30 @@ export async function mkdirs(abs: string, rel: string): Promise<void> {
   }
 }
 
+/** Marker in temp file names: `.<target name>.nas-mcp-tmp-<12 hex>`. */
+const TEMP_MARKER = ".nas-mcp-tmp-";
+/** Matches a temp file name made by `atomicWriteText`. */
+export const TEMP_FILE_NAME = /^\..*\.nas-mcp-tmp-[0-9a-f]{12}$/;
+
 export interface AtomicWriteOptions {
-  /** Runs after the temp file is fully written, just before it is renamed into place (e.g. move the old version to Trash). */
+  /**
+   * Runs after the temp file is fully written and synced, just before it is
+   * renamed over the target (e.g. put a copy of the old version in the Trash;
+   * the target must stay in place). Throwing aborts the write, target untouched.
+   */
   beforeRename?: () => Promise<void>;
 }
 
 export async function atomicWriteText(target: string, content: string, opts: AtomicWriteOptions = {}): Promise<void> {
-  const tmp = path.join(path.dirname(target), `.${path.basename(target)}.nas-mcp-tmp-${randomBytes(6).toString("hex")}`);
+  const tmp = path.join(path.dirname(target), `.${path.basename(target)}${TEMP_MARKER}${randomBytes(6).toString("hex")}`);
   try {
-    await writeFile(tmp, content, { encoding: "utf8", flag: "wx" });
+    const fh = await open(tmp, "wx");
+    try {
+      await fh.writeFile(content, "utf8");
+      await fh.sync();
+    } finally {
+      await fh.close();
+    }
     await opts.beforeRename?.();
     await rename(tmp, target);
   } catch (err) {

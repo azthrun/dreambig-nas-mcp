@@ -8,20 +8,12 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { z } from "zod";
 import { detectKind } from "../content-kind.js";
-import { entryType, type Child, type Resolved, type Sandbox } from "../sandbox.js";
+import type { Child, Resolved, Sandbox } from "../sandbox.js";
+import { entrySchema, toEntry, type Entry } from "./entry.js";
 import { defineTool, structured } from "./types.js";
 
 /** Matching lines longer than this are cut, so one minified file can't flood the agent's context. */
 const MAX_LINE_CHARS = 500;
-
-const entrySchema = z.object({
-  path: z.string().describe("Root-relative Path"),
-  name: z.string(),
-  type: z.enum(["file", "folder", "other"]),
-  size: z.number().describe("Bytes (0 for folders)"),
-  modified: z.string().describe("ISO 8601"),
-});
-type Entry = z.infer<typeof entrySchema>;
 
 const matchSchema = z.object({
   path: z.string().describe("Root-relative Path"),
@@ -94,13 +86,7 @@ export const searchTool = defineTool({
       for await (const c of walk(sandbox, scope)) {
         if (!path.matchesGlob(c.name, name)) continue;
         if (entries.length === limit) return structured({ entries, truncated: true });
-        entries.push({
-          path: c.path,
-          name: c.name,
-          type: entryType(c.stats),
-          size: c.stats.isFile() ? c.stats.size : 0,
-          modified: c.stats.mtime.toISOString(),
-        });
+        entries.push(toEntry(c));
       }
       return structured({ entries, truncated: false });
     }

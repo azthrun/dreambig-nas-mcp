@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 import { atomicWriteText } from "../atomic-write.js";
-import { audit } from "../audit.js";
+import { auditOk } from "../audit.js";
 import { detectKindFromBytes } from "../content-kind.js";
 import { ToolError } from "../errors.js";
 import { defineTool, structured } from "./types.js";
@@ -56,10 +56,11 @@ export const editTool = defineTool({
     let trashedAt = "";
     await atomicWriteText(entry.real, updated, {
       beforeRename: async () => {
-        trashedAt = await trash.moveToTrash({ path: sandbox.relativePath(entry.real), abs: entry.real });
+        await sandbox.recheck(entry.real, entry.path);
+        trashedAt = await trash.copyToTrash(entry);
       },
     });
-    audit({ result: "ok", tool: "edit", paths: [entry.path], trashed: [trashedAt] });
+    auditOk("edit", [entry.path], [trashedAt]);
     return structured({ path: entry.path, replacements: count });
   },
 });

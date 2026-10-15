@@ -14,6 +14,8 @@ import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { audit } from "./audit.js";
 import type { Config } from "./config.js";
+import { trashDir } from "./trash.js";
+import { withWriteLock } from "./write-lock.js";
 
 const DATE_FOLDER = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -31,9 +33,13 @@ function ageInDays(name: string, now: Date): number | null {
  * Run one purge. Emits one audit line (`action: "trash_purge"`) listing the
  * purged date folders as Trash-relative Paths. Never throws.
  */
-export async function purgeTrash(config: Config, now: Date = new Date()): Promise<void> {
-  if (config.trashRetentionDays === 0) return;
-  const dir = path.join(config.root, config.trashDirName);
+export function purgeTrash(config: Config, now: Date = new Date()): Promise<void> {
+  if (config.trashRetentionDays === 0) return Promise.resolve();
+  return withWriteLock(() => purgeNow(config, now));
+}
+
+async function purgeNow(config: Config, now: Date): Promise<void> {
+  const dir = trashDir(config);
   const purged: string[] = [];
   try {
     let entries: Dirent[];

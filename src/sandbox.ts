@@ -5,7 +5,8 @@
  *
  * - `resolve(path)`        an existing entry (follows symlinks, must stay in Root)
  * - `resolveEntry(path)`   an existing entry as itself (move/delete source; symlink = the link)
- * - `resolveForCreate(path)` an entry that may not exist yet (for write/mkdir/move targets)
+ * - `resolveForCreate(path)` an entry that may not exist yet (for write/mkdir targets)
+ * - `locateForCreate(path)` same, located as itself (move target)
  * - `children(dir)`        visible children of a folder (Hidden Entries and
  *                          out-of-Root / broken symlinks are skipped)
  * - `isHidden(path)`       Hidden Entry check on a normalized Root-relative Path
@@ -18,6 +19,13 @@ import { ToolError } from "./errors.js";
 
 /** Synology system entries, hidden at any depth. */
 export const DEFAULT_HIDDEN_NAMES = ["@eaDir", "#recycle", "#snapshot", ".DS_Store"];
+
+/**
+ * Canonical form for Hidden Entry matching: Unicode NFC, lower case. Clients
+ * (macOS especially) may send decomposed (NFD) names, and the NAS share is
+ * typically case-insensitive over SMB, so `@EADIR` must not slip past `@eaDir`.
+ */
+const fold = (s: string): string => s.normalize("NFC").toLowerCase();
 
 /** Entry type as reported to agents (symlinks are reported as their target). */
 export const entryType = (s: Stats): "file" | "folder" | "other" =>
@@ -32,12 +40,15 @@ export interface Resolved {
   real: string;
 }
 
-/** An entry located as itself (symlinks not followed on the last segment): real parent folder + name. */
+/**
+ * An entry located as itself: the last segment is not followed, so a symlink is
+ * the link, not its target. Used for whatever gets renamed, replaced or trashed.
+ */
 export interface Located extends Resolved {
-  /** Absolute location: real parent folder + entry name. Rename/trash this. */
-  at: string;
-  /** Root-relative Path of `at`. */
-  atPath: string;
+  /** Absolute location of the entry itself: real parent folder + entry name. */
+  selfAbs: string;
+  /** Root-relative Path of `selfAbs` (real parent's Path + entry name). */
+  selfPath: string;
 }
 
 export interface Child extends Resolved {
@@ -53,13 +64,16 @@ function errnoCode(err: unknown): string | undefined {
 
 export class Sandbox {
   readonly root: string;
-  private readonly trashDirName: string;
+  /** Folded (see `fold`) Trash folder name, built-in hidden names and extra patterns. */
+  private readonly trashName: string;
+  private readonly hiddenNames: string[];
   private readonly extraPatterns: string[];
 
   constructor(config: Config) {
     this.root = config.root;
-    this.trashDirName = config.trashDirName;
-    this.extraPatterns = config.extraHiddenPatterns;
+    this.trashName = fold(config.trashDirName);
+    this.hiddenNames = DEFAULT_HIDDEN_NAMES.map(fold);
+    this.extraPatterns = config.extraHiddenPatterns.map(fold);
   }
 
   /** Parse an agent-supplied Path into segments, rejecting absolute paths and `..`. */
@@ -76,14 +90,17 @@ export class Sandbox {
     return segs;
   }
 
-  /** True if the normalized Root-relative Path is, or is inside, a Hidden Entry. */
+  /**
+   * True if the normalized Root-relative Path is, or is inside, a Hidden Entry.
+   * Matching is case-insensitive and after Unicode NFC normalisation.
+   */
   isHidden(rel: string): boolean {
     if (rel === "") return false;
-    const segs = rel.split("/");
+    const segs = fold(rel).split("/");
     for (let i = 0; i < segs.length; i++) {
       const name = segs[i];
-      if (DEFAULT_HIDDEN_NAMES.includes(name)) return true;
-      if (i === 0 && name === this.trashDirName) return true;
+      if (this.hiddenNames.includes(name)) return true;
+      if (i === 0 && name === this.trashName) return true;
       const prefix = segs.slice(0, i + 1).join("/");
       for (const pattern of this.extraPatterns) {
         if (pattern.includes("/") ? path.matchesGlob(prefix, pattern) : path.matchesGlob(name, pattern)) return true;
@@ -97,13 +114,6 @@ export class Sandbox {
     if (real === this.root) return "";
     if (!real.startsWith(this.root + path.sep)) return null;
     return real.slice(this.root.length + 1).split(path.sep).join("/");
-  }
-
-  /** Root-relative Path of a real location already checked to be inside the Root (e.g. `Resolved.real`). */
-  relativePath(real: string): string {
-    const rel = this.relInsideRoot(real);
-    if (rel === null) throw new Error(`internal: ${real} is outside the Root`);
-    return rel;
   }
 
   /** Check a real location is inside the Root and not a Hidden Entry; returns its Root-relative Path. */
@@ -142,14 +152,29 @@ export class Sandbox {
   async resolveEntry(input: string): Promise<Located> {
     const resolved = await this.resolve(input);
     if (resolved.path === "") throw new ToolError("forbidden", "the Root itself cannot be moved or deleted", [""]);
-    const at = path.join(await realpath(path.dirname(resolved.abs)), path.basename(resolved.abs));
-    return { ...resolved, at, atPath: this.checkReal(at, resolved.path) };
+    const selfAbs = path.join(await realpath(path.dirname(resolved.abs)), path.basename(resolved.abs));
+    return { ...resolved, selfAbs, selfPath: this.checkReal(selfAbs, resolved.path) };
+  }
+
+  /**
+   * Like `resolveForCreate`, but also locates the entry itself (move target): an
+   * existing symlink there is to be replaced, not written through. The parent
+   * folder may not exist yet.
+   */
+  async locateForCreate(input: string): Promise<Located> {
+    const resolved = await this.resolveForCreate(input);
+    const parent = path.posix.dirname(resolved.path);
+    const parentReal = parent === "." ? this.root : (await this.resolveForCreate(parent)).real;
+    const selfAbs = path.join(parentReal, path.basename(resolved.abs));
+    return { ...resolved, selfAbs, selfPath: this.checkReal(selfAbs, resolved.path) };
   }
 
   /**
    * Resolve a Path that may not exist yet (write/mkdir/move target). The nearest
-   * existing ancestor must resolve inside the Root. If the entry itself exists it
-   * is resolved like `resolve`. Throws forbidden for the Root itself.
+   * existing ancestor must resolve inside the Root, and the final real location
+   * (that ancestor's real path + the remaining segments) must not be a Hidden
+   * Entry. If the entry itself exists it is resolved like `resolve`. Throws
+   * forbidden for the Root itself.
    */
   async resolveForCreate(input: string): Promise<Resolved> {
     const segs = this.segments(input);
@@ -174,10 +199,27 @@ export class Sandbox {
         if (code === "EACCES") throw new ToolError("forbidden", `permission denied: ${rel}`, [rel]);
         throw err;
       }
-      this.checkReal(real, rel);
-      return { path: rel, abs, real: path.join(real, ...segs.slice(i)) };
+      // Check the final real location (real ancestor + remaining segments), not just the
+      // ancestor: through a symlink to the Root, `r/.nas-mcp-trash/x` is really in the Trash.
+      const finalReal = path.join(real, ...segs.slice(i));
+      this.checkReal(finalReal, rel);
+      return { path: rel, abs, real: finalReal };
     }
     throw new ToolError("not_found", "Root is missing", [rel]);
+  }
+
+  /**
+   * Re-verify, right before a rename/replace, that the real parent folder of an
+   * absolute location from `resolve*` is still that real folder (no symlink was
+   * swapped into the chain since it was resolved). Cheap: one realpath call.
+   * Only narrows the window for changes made outside this server; see write-lock.ts.
+   */
+  async recheck(abs: string, rel: string): Promise<void> {
+    const dir = path.dirname(abs);
+    const real = await realpath(dir).catch(() => null);
+    if (real !== dir) {
+      throw new ToolError("forbidden", `a parent folder of ${rel} changed during the operation; try again`, [rel]);
+    }
   }
 
   /** Visible children of a resolved folder, sorted by name. */

@@ -20,6 +20,24 @@ describe.concurrent("startup config", () => {
     expect(stderr).toMatch(/NAS_MCP_TOKEN/);
   });
 
+  it("refuses to start with the .env.example placeholder token", async () => {
+    const root = await makeTempDir();
+    cleanup.push(root);
+    const { code, stderr } = await runServerExpectingExit({ NAS_MCP_ROOT: root, NAS_MCP_TOKEN: "change-me" });
+    expect(code).not.toBe(0);
+    expect(stderr).toMatch(/NAS_MCP_TOKEN/);
+    expect(stderr).toMatch(/placeholder/i);
+  });
+
+  it("refuses to start with a token shorter than 16 characters", async () => {
+    const root = await makeTempDir();
+    cleanup.push(root);
+    const { code, stderr } = await runServerExpectingExit({ NAS_MCP_ROOT: root, NAS_MCP_TOKEN: "short-token-123" });
+    expect(code).not.toBe(0);
+    expect(stderr).toMatch(/NAS_MCP_TOKEN/);
+    expect(stderr).toMatch(/16/);
+  });
+
   it("refuses to start when the Root is unset", async () => {
     const { code, stderr } = await runServerExpectingExit({ NAS_MCP_TOKEN: TEST_TOKEN });
     expect(code).not.toBe(0);

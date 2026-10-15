@@ -1,19 +1,11 @@
 import { z } from "zod";
 import { ToolError } from "../errors.js";
-import { entryType, type Child, type Resolved, type Sandbox } from "../sandbox.js";
+import type { Resolved, Sandbox } from "../sandbox.js";
+import { entrySchema, toEntry, type Entry } from "./entry.js";
 import { defineTool, structured } from "./types.js";
 
 export const PAGE_SIZE = 200;
 export const MAX_DEPTH = 3;
-
-const entrySchema = z.object({
-  path: z.string().describe("Root-relative Path"),
-  name: z.string(),
-  type: z.enum(["file", "folder", "other"]),
-  size: z.number().describe("Bytes (0 for folders)"),
-  modified: z.string().describe("ISO 8601"),
-});
-type Entry = z.infer<typeof entrySchema>;
 
 interface CursorData {
   p: string;
@@ -31,16 +23,6 @@ function decodeCursor(cursor: string, rel: string, depth: number): number {
     // fall through
   }
   throw new ToolError("invalid", "cursor is not valid for this path and depth; start again without a cursor");
-}
-
-function toEntry(c: Child): Entry {
-  return {
-    path: c.path,
-    name: c.name,
-    type: entryType(c.stats),
-    size: c.stats.isFile() ? c.stats.size : 0,
-    modified: c.stats.mtime.toISOString(),
-  };
 }
 
 /** Pre-order walk. In-Root symlinked folders are followed; MAX_DEPTH bounds symlink loops. */
