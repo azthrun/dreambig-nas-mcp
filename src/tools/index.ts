@@ -6,10 +6,12 @@
 import { listTool } from "./list.js";
 import { statTool } from "./stat.js";
 import { readTool } from "./read.js";
+import { searchTool } from "./search.js";
 import type { ToolDefinition } from "./types.js";
 
 export const tools: ToolDefinition<any, any>[] = [
   listTool,
   statTool,
   readTool,
+  searchTool,
 ];
