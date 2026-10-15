@@ -8,12 +8,16 @@ export type AuditResult = "ok" | "rejected" | "error";
 
 export interface AuditEvent {
   result: AuditResult;
+  /** Non-tool server action, e.g. "trash_purge". */
+  action?: string;
   /** Tool name, when the event comes from a tool call. */
   tool?: string;
   /** Root-relative Path(s) involved. */
   paths?: string[];
   /** Where replaced/removed content went, as Trash-relative Paths. */
   trashed?: string[];
+  /** Trash-relative Paths permanently removed by a Trash purge. */
+  purged?: string[];
   /** Short machine-readable reason, e.g. "unauthorized", "forbidden". */
   reason?: string;
   /** Human-readable detail. */

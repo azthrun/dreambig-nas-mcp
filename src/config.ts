@@ -27,6 +27,10 @@ export interface Config {
   searchMaxResults: number;
   /** search: content grep skips files larger than this (NAS_MCP_GREP_MAX_FILE_BYTES, default 5 MB). */
   grepMaxFileBytes: number;
+  /** Trash entries older than this many days are purged (NAS_MCP_TRASH_RETENTION_DAYS, default 30; 0 = keep forever). */
+  trashRetentionDays: number;
+  /** Seconds between Trash purges while running (NAS_MCP_TRASH_PURGE_INTERVAL_SECONDS, default 3600). */
+  trashPurgeIntervalSeconds: number;
 }
 
 export class ConfigError extends Error {}
@@ -86,5 +90,7 @@ export function loadConfig(env: Env = process.env): Config {
     readImageMaxBytes: int(env, "NAS_MCP_READ_IMAGE_MAX_BYTES", 20 * 1024 * 1024, 1),
     searchMaxResults: int(env, "NAS_MCP_SEARCH_MAX_RESULTS", 100, 1, 10_000),
     grepMaxFileBytes: int(env, "NAS_MCP_GREP_MAX_FILE_BYTES", 5 * 1024 * 1024, 1),
+    trashRetentionDays: int(env, "NAS_MCP_TRASH_RETENTION_DAYS", 30, 0, 36_500),
+    trashPurgeIntervalSeconds: int(env, "NAS_MCP_TRASH_PURGE_INTERVAL_SECONDS", 3600, 1, 2_147_483),
   };
 }
