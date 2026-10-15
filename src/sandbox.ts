@@ -19,6 +19,13 @@ import { ToolError } from "./errors.js";
 /** Synology system entries, hidden at any depth. */
 export const DEFAULT_HIDDEN_NAMES = ["@eaDir", "#recycle", "#snapshot", ".DS_Store"];
 
+/**
+ * Canonical form for Hidden Entry matching: Unicode NFC, lower case. Clients
+ * (macOS especially) may send decomposed (NFD) names, and the NAS share is
+ * typically case-insensitive over SMB, so `@EADIR` must not slip past `@eaDir`.
+ */
+const fold = (s: string): string => s.normalize("NFC").toLowerCase();
+
 /** Entry type as reported to agents (symlinks are reported as their target). */
 export const entryType = (s: Stats): "file" | "folder" | "other" =>
   s.isFile() ? "file" : s.isDirectory() ? "folder" : "other";
@@ -53,13 +60,16 @@ function errnoCode(err: unknown): string | undefined {
 
 export class Sandbox {
   readonly root: string;
-  private readonly trashDirName: string;
+  /** Folded (see `fold`) Trash folder name, built-in hidden names and extra patterns. */
+  private readonly trashName: string;
+  private readonly hiddenNames: string[];
   private readonly extraPatterns: string[];
 
   constructor(config: Config) {
     this.root = config.root;
-    this.trashDirName = config.trashDirName;
-    this.extraPatterns = config.extraHiddenPatterns;
+    this.trashName = fold(config.trashDirName);
+    this.hiddenNames = DEFAULT_HIDDEN_NAMES.map(fold);
+    this.extraPatterns = config.extraHiddenPatterns.map(fold);
   }
 
   /** Parse an agent-supplied Path into segments, rejecting absolute paths and `..`. */
@@ -76,14 +86,17 @@ export class Sandbox {
     return segs;
   }
 
-  /** True if the normalized Root-relative Path is, or is inside, a Hidden Entry. */
+  /**
+   * True if the normalized Root-relative Path is, or is inside, a Hidden Entry.
+   * Matching is case-insensitive and after Unicode NFC normalisation.
+   */
   isHidden(rel: string): boolean {
     if (rel === "") return false;
-    const segs = rel.split("/");
+    const segs = fold(rel).split("/");
     for (let i = 0; i < segs.length; i++) {
       const name = segs[i];
-      if (DEFAULT_HIDDEN_NAMES.includes(name)) return true;
-      if (i === 0 && name === this.trashDirName) return true;
+      if (this.hiddenNames.includes(name)) return true;
+      if (i === 0 && name === this.trashName) return true;
       const prefix = segs.slice(0, i + 1).join("/");
       for (const pattern of this.extraPatterns) {
         if (pattern.includes("/") ? path.matchesGlob(prefix, pattern) : path.matchesGlob(name, pattern)) return true;
@@ -148,8 +161,10 @@ export class Sandbox {
 
   /**
    * Resolve a Path that may not exist yet (write/mkdir/move target). The nearest
-   * existing ancestor must resolve inside the Root. If the entry itself exists it
-   * is resolved like `resolve`. Throws forbidden for the Root itself.
+   * existing ancestor must resolve inside the Root, and the final real location
+   * (that ancestor's real path + the remaining segments) must not be a Hidden
+   * Entry. If the entry itself exists it is resolved like `resolve`. Throws
+   * forbidden for the Root itself.
    */
   async resolveForCreate(input: string): Promise<Resolved> {
     const segs = this.segments(input);
@@ -174,8 +189,11 @@ export class Sandbox {
         if (code === "EACCES") throw new ToolError("forbidden", `permission denied: ${rel}`, [rel]);
         throw err;
       }
-      this.checkReal(real, rel);
-      return { path: rel, abs, real: path.join(real, ...segs.slice(i)) };
+      // Check the final real location (real ancestor + remaining segments), not just the
+      // ancestor: through a symlink to the Root, `r/.nas-mcp-trash/x` is really in the Trash.
+      const finalReal = path.join(real, ...segs.slice(i));
+      this.checkReal(finalReal, rel);
+      return { path: rel, abs, real: finalReal };
     }
     throw new ToolError("not_found", "Root is missing", [rel]);
   }
