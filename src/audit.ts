@@ -12,6 +12,8 @@ export interface AuditEvent {
   tool?: string;
   /** Root-relative Path(s) involved. */
   paths?: string[];
+  /** Where replaced/removed content went, as Trash-relative Paths. */
+  trashed?: string[];
   /** Short machine-readable reason, e.g. "unauthorized", "forbidden". */
   reason?: string;
   /** Human-readable detail. */

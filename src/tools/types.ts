@@ -2,11 +2,13 @@ import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/
 import type { z } from "zod";
 import type { Config } from "../config.js";
 import type { Sandbox } from "../sandbox.js";
+import type { Trash } from "../trash.js";
 
-/** Everything a tool handler may use. Add shared modules (e.g. Trash) here. */
+/** Everything a tool handler may use. Add shared modules here. */
 export interface ToolContext {
   config: Config;
   sandbox: Sandbox;
+  trash: Trash;
 }
 
 export interface ToolDefinition<In extends z.ZodRawShape = z.ZodRawShape, Out extends z.ZodRawShape = z.ZodRawShape> {

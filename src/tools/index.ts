@@ -7,6 +7,9 @@ import { listTool } from "./list.js";
 import { statTool } from "./stat.js";
 import { readTool } from "./read.js";
 import { searchTool } from "./search.js";
+import { writeTool } from "./write.js";
+import { editTool } from "./edit.js";
+import { mkdirTool } from "./mkdir.js";
 import type { ToolDefinition } from "./types.js";
 
 export const tools: ToolDefinition<any, any>[] = [
@@ -14,4 +17,7 @@ export const tools: ToolDefinition<any, any>[] = [
   statTool,
   readTool,
   searchTool,
+  writeTool,
+  editTool,
+  mkdirTool,
 ];

@@ -9,6 +9,7 @@ import type { Config } from "./config.js";
 import { ToolError } from "./errors.js";
 import { Sandbox } from "./sandbox.js";
 import { tools } from "./tools/index.js";
+import { Trash } from "./trash.js";
 import type { ToolContext } from "./tools/types.js";
 
 export const SERVER_NAME = "dreambig-nas-mcp";
@@ -20,7 +21,7 @@ function toolError(err: ToolError): CallToolResult {
 
 export function createMcpServer(config: Config): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
-  const ctx: ToolContext = { config, sandbox: new Sandbox(config) };
+  const ctx: ToolContext = { config, sandbox: new Sandbox(config), trash: new Trash(config) };
 
   for (const tool of tools) {
     server.registerTool(
