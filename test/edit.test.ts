@@ -15,7 +15,9 @@ describe("edit", () => {
         "blob.bin": Buffer.from([0x00, 0x01, 0x02, 0x61, 0xff]),
         "audit.md": "one",
         ".nas-mcp-trash/old.txt": "x",
+        "big.txt": "x".repeat(65),
       },
+      env: { NAS_MCP_READ_TEXT_MAX_BYTES: "64" },
     });
   });
   afterAll(async () => {
@@ -63,6 +65,12 @@ describe("edit", () => {
     const r = await s.call("edit", { path: "windows.txt", oldString: "two", newString: "2" });
     expect(r.isError, textOf(r)).toBeFalsy();
     expect(await content("windows.txt")).toBe("﻿one\r\n2\r\n");
+  });
+
+  it("refuses files over the text read limit", async () => {
+    const r = await s.call("edit", { path: "big.txt", oldString: "x", newString: "y" });
+    expect(textOf(r)).toMatch(/^too_large/);
+    expect(await content("big.txt")).toBe("x".repeat(65));
   });
 
   it("refuses non-text files", async () => {

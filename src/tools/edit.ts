@@ -6,9 +6,6 @@ import { detectKindFromBytes } from "../content-kind.js";
 import { ToolError } from "../errors.js";
 import { defineTool, structured } from "./types.js";
 
-/** Largest file `edit` will load (matches the spec's default text read limit). */
-const MAX_EDIT_BYTES = 10 * 1024 * 1024;
-
 export const editTool = defineTool({
   name: "edit",
   title: "Edit text file",
@@ -26,12 +23,16 @@ export const editTool = defineTool({
     replacements: z.number().describe("Number of occurrences replaced"),
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-  async handler({ path: input, oldString, newString, replaceAll }, { sandbox, trash }) {
+  async handler({ path: input, oldString, newString, replaceAll }, { sandbox, trash, config }) {
     const entry = await sandbox.resolve(input);
     const st = await stat(entry.real);
     if (!st.isFile()) throw new ToolError("not_a_file", `${entry.path} is not a file`, [entry.path]);
-    if (st.size > MAX_EDIT_BYTES) {
-      throw new ToolError("too_large", `${entry.path} is ${st.size} bytes; edit is limited to ${MAX_EDIT_BYTES}`, [entry.path]);
+    if (st.size > config.readTextMaxBytes) {
+      throw new ToolError(
+        "too_large",
+        `${entry.path} is ${st.size} bytes; edit is limited to ${config.readTextMaxBytes} (the text read limit)`,
+        [entry.path],
+      );
     }
     const bytes = await readFile(entry.real);
     if (detectKindFromBytes(bytes, false).kind !== "text") {

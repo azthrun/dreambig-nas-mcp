@@ -49,7 +49,7 @@ describe("write", () => {
     for (const v of versions) expect(v.path).toMatch(/^\d{4}-\d{2}-\d{2}\/notes\/again.*\.md$/);
   });
 
-  it("keeps the Trash invisible to list and stat once it holds replaced files", async () => {
+  it("keeps the Trash invisible to list, stat, read and search once it holds replaced files", async () => {
     expect((await trashFiles(s.root)).length).toBeGreaterThan(0);
     const listed = await s.call("list", { path: "", depth: 3 });
     expect(listed.isError, textOf(listed)).toBeFalsy();
@@ -57,6 +57,13 @@ describe("write", () => {
     expect(paths).toContain("notes/existing.md");
     expect(paths.filter((p) => p.includes("nas-mcp-trash"))).toEqual([]);
     expect(textOf(await s.call("stat", { path: ".nas-mcp-trash" }))).toMatch(/^forbidden/);
+    const [trashed] = await trashFiles(s.root);
+    expect(textOf(await s.call("read", { path: `.nas-mcp-trash/${trashed.path}` }))).toMatch(/^forbidden/);
+
+    const byName = await s.call("search", { name: "existing*" });
+    expect((byName.structuredContent!.entries as { path: string }[]).map((e) => e.path)).toEqual(["notes/existing.md"]);
+    const byContent = await s.call("search", { content: "old" });
+    expect(byContent.structuredContent!.matches).toEqual([]);
   });
 
   it("emits one audit line per write, naming the Path and where the old version went", async () => {
