@@ -13,7 +13,9 @@ export type ToolErrorCode =
   | "forbidden" // Path escape, Hidden Entry, symlink out of Root, permission denied
   | "not_text"
   | "not_a_folder"
-  | "not_a_file";
+  | "not_a_file"
+  | "no_match" // edit: oldString not found
+  | "not_unique"; // edit: oldString occurs more than once
 
 export class ToolError extends Error {
   constructor(

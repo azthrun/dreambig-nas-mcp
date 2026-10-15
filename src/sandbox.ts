@@ -90,6 +90,13 @@ export class Sandbox {
     return real.slice(this.root.length + 1).split(path.sep).join("/");
   }
 
+  /** Root-relative Path of a real location already checked to be inside the Root (e.g. `Resolved.real`). */
+  relativePath(real: string): string {
+    const rel = this.relInsideRoot(real);
+    if (rel === null) throw new Error(`internal: ${real} is outside the Root`);
+    return rel;
+  }
+
   /** Check a real location is inside the Root and not a Hidden Entry; returns its Root-relative Path. */
   private checkReal(real: string, rel: string): string {
     const realRel = this.relInsideRoot(real);

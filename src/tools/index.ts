@@ -5,9 +5,15 @@
  */
 import { listTool } from "./list.js";
 import { statTool } from "./stat.js";
+import { writeTool } from "./write.js";
+import { editTool } from "./edit.js";
+import { mkdirTool } from "./mkdir.js";
 import type { ToolDefinition } from "./types.js";
 
 export const tools: ToolDefinition<any, any>[] = [
   listTool,
   statTool,
+  writeTool,
+  editTool,
+  mkdirTool,
 ];
