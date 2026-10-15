@@ -1,8 +1,10 @@
 /** Test helpers for inspecting the Trash folder on disk. */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { TRASH_DIR_NAME } from "../src/config.js";
 
-export const TRASH_DIR = ".nas-mcp-trash";
+/** Name of the Trash folder at the top of the Root. */
+export const TRASH_DIR = TRASH_DIR_NAME;
 
 /** Every file in the Trash, as Trash-relative Paths (sorted) with their text content. */
 export async function trashFiles(root: string): Promise<{ path: string; content: string }[]> {

@@ -35,6 +35,9 @@ export interface Config {
 
 export class ConfigError extends Error {}
 
+/** Name of the Trash folder at the top of the Root (fixed; not configurable). */
+export const TRASH_DIR_NAME = ".nas-mcp-trash";
+
 type Env = Record<string, string | undefined>;
 
 function required(env: Env, name: string): string {
@@ -103,7 +106,7 @@ export function loadConfig(env: Env = process.env): Config {
     token,
     port: int(env, "NAS_MCP_PORT", 8080, 0, 65535),
     host: env.NAS_MCP_HOST?.trim() || "0.0.0.0",
-    trashDirName: ".nas-mcp-trash",
+    trashDirName: TRASH_DIR_NAME,
     extraHiddenPatterns: list(env, "NAS_MCP_HIDDEN_PATTERNS"),
     readTextMaxBytes: int(env, "NAS_MCP_READ_TEXT_MAX_BYTES", 10 * 1024 * 1024, 1),
     readImageMaxBytes: int(env, "NAS_MCP_READ_IMAGE_MAX_BYTES", 20 * 1024 * 1024, 1),

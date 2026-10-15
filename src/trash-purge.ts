@@ -14,6 +14,7 @@ import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { audit } from "./audit.js";
 import type { Config } from "./config.js";
+import { trashDir } from "./trash.js";
 import { withWriteLock } from "./write-lock.js";
 
 const DATE_FOLDER = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -38,7 +39,7 @@ export function purgeTrash(config: Config, now: Date = new Date()): Promise<void
 }
 
 async function purgeNow(config: Config, now: Date): Promise<void> {
-  const dir = path.join(config.root, config.trashDirName);
+  const dir = trashDir(config);
   const purged: string[] = [];
   try {
     let entries: Dirent[];

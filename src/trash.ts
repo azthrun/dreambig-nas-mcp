@@ -27,12 +27,15 @@ const errnoCode = (err: unknown): string | undefined => (err as NodeJS.ErrnoExce
 /** Hard links are unsupported here (other filesystem, or a filesystem without them). */
 const NO_LINK = new Set(["EXDEV", "EPERM", "ENOTSUP", "ENOSYS", "EOPNOTSUPP", "EMLINK"]);
 
+/** Absolute path of the Trash folder. The one place the Trash location is defined. */
+export const trashDir = (config: Config): string => path.join(config.root, config.trashDirName);
+
 export class Trash {
   /** Absolute path of the Trash folder. */
   readonly dir: string;
 
   constructor(config: Config) {
-    this.dir = path.join(config.root, config.trashDirName);
+    this.dir = trashDir(config);
   }
 
   /**
