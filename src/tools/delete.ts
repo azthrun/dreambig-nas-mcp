@@ -17,8 +17,8 @@ export const deleteTool = defineTool({
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   async handler({ path: input }, { sandbox, trash }) {
     const entry = await sandbox.resolveEntry(input);
-    await sandbox.recheck(entry.at, entry.path);
-    const trashedAt = await trash.moveToTrash({ path: entry.atPath, abs: entry.at });
+    await sandbox.recheck(entry.selfAbs, entry.path);
+    const trashedAt = await trash.moveToTrash(entry);
     audit({ result: "ok", tool: "delete", paths: [entry.path], trashed: [trashedAt] });
     return structured({ path: entry.path });
   },

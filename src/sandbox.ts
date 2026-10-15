@@ -5,7 +5,8 @@
  *
  * - `resolve(path)`        an existing entry (follows symlinks, must stay in Root)
  * - `resolveEntry(path)`   an existing entry as itself (move/delete source; symlink = the link)
- * - `resolveForCreate(path)` an entry that may not exist yet (for write/mkdir/move targets)
+ * - `resolveForCreate(path)` an entry that may not exist yet (for write/mkdir targets)
+ * - `locateForCreate(path)` same, located as itself (move target)
  * - `children(dir)`        visible children of a folder (Hidden Entries and
  *                          out-of-Root / broken symlinks are skipped)
  * - `isHidden(path)`       Hidden Entry check on a normalized Root-relative Path
@@ -39,12 +40,15 @@ export interface Resolved {
   real: string;
 }
 
-/** An entry located as itself (symlinks not followed on the last segment): real parent folder + name. */
+/**
+ * An entry located as itself: the last segment is not followed, so a symlink is
+ * the link, not its target. Used for whatever gets renamed, replaced or trashed.
+ */
 export interface Located extends Resolved {
-  /** Absolute location: real parent folder + entry name. Rename/trash this. */
-  at: string;
-  /** Root-relative Path of `at`. */
-  atPath: string;
+  /** Absolute location of the entry itself: real parent folder + entry name. */
+  selfAbs: string;
+  /** Root-relative Path of `selfAbs` (real parent's Path + entry name). */
+  selfPath: string;
 }
 
 export interface Child extends Resolved {
@@ -112,13 +116,6 @@ export class Sandbox {
     return real.slice(this.root.length + 1).split(path.sep).join("/");
   }
 
-  /** Root-relative Path of a real location already checked to be inside the Root (e.g. `Resolved.real`). */
-  relativePath(real: string): string {
-    const rel = this.relInsideRoot(real);
-    if (rel === null) throw new Error(`internal: ${real} is outside the Root`);
-    return rel;
-  }
-
   /** Check a real location is inside the Root and not a Hidden Entry; returns its Root-relative Path. */
   private checkReal(real: string, rel: string): string {
     const realRel = this.relInsideRoot(real);
@@ -155,8 +152,21 @@ export class Sandbox {
   async resolveEntry(input: string): Promise<Located> {
     const resolved = await this.resolve(input);
     if (resolved.path === "") throw new ToolError("forbidden", "the Root itself cannot be moved or deleted", [""]);
-    const at = path.join(await realpath(path.dirname(resolved.abs)), path.basename(resolved.abs));
-    return { ...resolved, at, atPath: this.checkReal(at, resolved.path) };
+    const selfAbs = path.join(await realpath(path.dirname(resolved.abs)), path.basename(resolved.abs));
+    return { ...resolved, selfAbs, selfPath: this.checkReal(selfAbs, resolved.path) };
+  }
+
+  /**
+   * Like `resolveForCreate`, but also locates the entry itself (move target): an
+   * existing symlink there is to be replaced, not written through. The parent
+   * folder may not exist yet.
+   */
+  async locateForCreate(input: string): Promise<Located> {
+    const resolved = await this.resolveForCreate(input);
+    const parent = path.posix.dirname(resolved.path);
+    const parentReal = parent === "." ? this.root : (await this.resolveForCreate(parent)).real;
+    const selfAbs = path.join(parentReal, path.basename(resolved.abs));
+    return { ...resolved, selfAbs, selfPath: this.checkReal(selfAbs, resolved.path) };
   }
 
   /**

@@ -15,9 +15,10 @@ import { constants } from "node:fs";
 import { copyFile, link, lstat, mkdir, readlink, rename, rmdir, symlink, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { Config } from "./config.js";
+import type { Located, Resolved } from "./sandbox.js";
 
-/** An entry to trash: its Root-relative Path and its absolute location. */
-export interface TrashSource {
+/** What gets placed: Trash layout Path (Root-relative) and absolute location. */
+interface TrashSource {
   path: string;
   abs: string;
 }
@@ -33,26 +34,32 @@ export const trashDir = (config: Config): string => path.join(config.root, confi
 export class Trash {
   /** Absolute path of the Trash folder. */
   readonly dir: string;
+  private readonly root: string;
 
   constructor(config: Config) {
     this.dir = trashDir(config);
+    this.root = config.root;
   }
 
   /**
-   * Move an entry (file, folder, or symlink itself) into today's Trash folder,
-   * keeping its Root-relative layout. Returns the Trash-relative Path it landed at.
+   * Move an entry as itself (file, folder, or the symlink itself; from
+   * `Sandbox.resolveEntry` / `locateForCreate`) into today's Trash folder, keeping
+   * its Root-relative layout. Returns the Trash-relative Path it landed at.
    */
-  moveToTrash(entry: TrashSource, now: Date = new Date()): Promise<string> {
-    return this.place(entry, now, (dest) => moveNoReplace(entry.abs, dest));
+  moveToTrash(entry: Located, now: Date = new Date()): Promise<string> {
+    const src = { path: entry.selfPath, abs: entry.selfAbs };
+    return this.place(src, now, (dest) => moveNoReplace(src.abs, dest));
   }
 
   /**
-   * Put a copy of a file into today's Trash folder and leave the original in
+   * Put a copy of a file (its real location: symlinks followed, as from
+   * `Sandbox.resolve`) into today's Trash folder and leave the original in
    * place (a hard link where possible, so no data is copied). Used before an
    * atomic replace, so the target is never missing. Returns the Trash-relative Path.
    */
-  copyToTrash(entry: TrashSource, now: Date = new Date()): Promise<string> {
-    return this.place(entry, now, (dest) => copyNoReplace(entry.abs, dest));
+  copyToTrash(file: Resolved, now: Date = new Date()): Promise<string> {
+    const src = { path: path.relative(this.root, file.real).split(path.sep).join("/"), abs: file.real };
+    return this.place(src, now, (dest) => copyNoReplace(src.abs, dest));
   }
 
   /**
