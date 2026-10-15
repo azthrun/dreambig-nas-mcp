@@ -2,7 +2,7 @@ import { lstat, rename } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { mkdirs } from "../atomic-write.js";
-import { audit } from "../audit.js";
+import { auditOk } from "../audit.js";
 import { ToolError } from "../errors.js";
 import { defineTool, structured } from "./types.js";
 
@@ -48,7 +48,7 @@ export const moveTool = defineTool({
     await sandbox.recheck(target.selfAbs, target.path);
     const trashed = replacing ? [await trash.moveToTrash(target)] : undefined;
     await rename(source.selfAbs, target.selfAbs);
-    audit({ result: "ok", tool: "move", paths: [source.path, target.path], ...(trashed ? { trashed } : {}) });
+    auditOk("move", [source.path, target.path], trashed);
     return structured({ from: source.path, to: target.path, replaced: replacing });
   },
 });

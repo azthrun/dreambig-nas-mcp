@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { audit } from "../audit.js";
+import { auditOk } from "../audit.js";
 import { defineTool, structured } from "./types.js";
 
 export const deleteTool = defineTool({
@@ -19,7 +19,7 @@ export const deleteTool = defineTool({
     const entry = await sandbox.resolveEntry(input);
     await sandbox.recheck(entry.selfAbs, entry.path);
     const trashedAt = await trash.moveToTrash(entry);
-    audit({ result: "ok", tool: "delete", paths: [entry.path], trashed: [trashedAt] });
+    auditOk("delete", [entry.path], [trashedAt]);
     return structured({ path: entry.path });
   },
 });

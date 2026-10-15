@@ -1,6 +1,6 @@
 import { lstat } from "node:fs/promises";
 import { z } from "zod";
-import { audit } from "../audit.js";
+import { auditOk } from "../audit.js";
 import { ToolError } from "../errors.js";
 import { mkdirs } from "../atomic-write.js";
 import { defineTool, structured } from "./types.js";
@@ -25,7 +25,7 @@ export const mkdirTool = defineTool({
       throw new ToolError("exists", `${target.path} already exists and is not a folder`, [target.path]);
     }
     if (!existing) await mkdirs(target.real, target.path);
-    audit({ result: "ok", tool: "mkdir", paths: [target.path] });
+    auditOk("mkdir", [target.path]);
     return structured({ path: target.path, created: !existing });
   },
 });

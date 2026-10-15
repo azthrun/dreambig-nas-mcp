@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 import { atomicWriteText } from "../atomic-write.js";
-import { audit } from "../audit.js";
+import { auditOk } from "../audit.js";
 import { detectKindFromBytes } from "../content-kind.js";
 import { ToolError } from "../errors.js";
 import { defineTool, structured } from "./types.js";
@@ -60,7 +60,7 @@ export const editTool = defineTool({
         trashedAt = await trash.copyToTrash(entry);
       },
     });
-    audit({ result: "ok", tool: "edit", paths: [entry.path], trashed: [trashedAt] });
+    auditOk("edit", [entry.path], [trashedAt]);
     return structured({ path: entry.path, replacements: count });
   },
 });

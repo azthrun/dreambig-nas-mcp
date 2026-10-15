@@ -30,6 +30,11 @@ export function audit(event: AuditEvent): void {
   process.stdout.write(JSON.stringify({ type: "audit", time: new Date().toISOString(), ...event }) + "\n");
 }
 
+/** Audit a successful tool call; `trashed` is omitted when empty. */
+export function auditOk(tool: string, paths: string[], trashed?: string[]): void {
+  audit({ result: "ok", tool, paths, ...(trashed?.length ? { trashed } : {}) });
+}
+
 /** Non-audit informational line on stdout. */
 export function logInfo(type: string, fields: Record<string, unknown> = {}): void {
   process.stdout.write(JSON.stringify({ type, time: new Date().toISOString(), ...fields }) + "\n");
