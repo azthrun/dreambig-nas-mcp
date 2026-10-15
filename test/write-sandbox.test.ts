@@ -14,7 +14,7 @@ describe("write targets and the Root sandbox", () => {
     await writeFile(path.join(outside, "secret.txt"), "top secret");
     s = await startServer({
       layout: { "docs/real.md": "real v1", ".nas-mcp-trash/2026-01-01/gone.txt": "x" },
-      env: { NAS_MCP_HIDDEN_PATTERNS: "private" },
+      env: { NAS_MCP_HIDDEN_PATTERNS: "private", NAS_MCP_TRASH_RETENTION_DAYS: "0" },
       setup: async (root) => {
         await symlink(outside, path.join(root, "leakdir"));
         await symlink(path.join(outside, "secret.txt"), path.join(root, "leak.txt"));

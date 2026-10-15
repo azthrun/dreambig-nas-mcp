@@ -55,7 +55,7 @@ describe("read", () => {
         "private/diary.md": "secret",
         "folder/": "",
       },
-      env: { NAS_MCP_HIDDEN_PATTERNS: "private" },
+      env: { NAS_MCP_HIDDEN_PATTERNS: "private", NAS_MCP_TRASH_RETENTION_DAYS: "0" },
       setup: async (root) => {
         outside = await makeTempDir("nas-mcp-outside-");
         await writeFile(path.join(outside, "secret.txt"), "outside");

@@ -24,7 +24,7 @@ describe("Root sandbox", () => {
         "drafts/a.tmp": "x",
         "drafts/keep.md": "x",
       },
-      env: { NAS_MCP_HIDDEN_PATTERNS: "private, *.tmp" },
+      env: { NAS_MCP_HIDDEN_PATTERNS: "private, *.tmp", NAS_MCP_TRASH_RETENTION_DAYS: "0" },
       setup: async (root) => {
         await symlink(path.join(outside, "secret.txt"), path.join(root, "leak.txt"));
         await symlink(outside, path.join(root, "leakdir"));
