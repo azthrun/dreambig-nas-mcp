@@ -5,8 +5,14 @@
  *
  * Layout: `<Root>/<trashDirName>/<YYYY-MM-DD>/<original Root-relative Path>`,
  * where the date is the day the entry was trashed (server local time).
+ *
+ * Placement never replaces anything already in the Trash: every placement uses
+ * a primitive that fails with EEXIST instead of overwriting (hard link, exclusive
+ * mkdir, symlink), and on EEXIST the next free name is tried. Callers also hold
+ * the write lock, which covers the one fallback without such a primitive.
  */
-import { lstat, mkdir, rename } from "node:fs/promises";
+import { constants } from "node:fs";
+import { copyFile, link, lstat, mkdir, readlink, rename, rmdir, symlink, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { Config } from "./config.js";
 
@@ -15,6 +21,11 @@ export interface TrashSource {
   path: string;
   abs: string;
 }
+
+const errnoCode = (err: unknown): string | undefined => (err as NodeJS.ErrnoException)?.code;
+
+/** Hard links are unsupported here (other filesystem, or a filesystem without them). */
+const NO_LINK = new Set(["EXDEV", "EPERM", "ENOTSUP", "ENOSYS", "EOPNOTSUPP", "EMLINK"]);
 
 export class Trash {
   /** Absolute path of the Trash folder. */
@@ -28,31 +39,103 @@ export class Trash {
    * Move an entry (file, folder, or symlink itself) into today's Trash folder,
    * keeping its Root-relative layout. Returns the Trash-relative Path it landed at.
    */
-  async moveToTrash(entry: TrashSource, now: Date = new Date()): Promise<string> {
-    const segs = [dateFolder(now), ...entry.path.split("/")];
-    const placed: string[] = [];
-    // Parent folders: reuse an existing folder, otherwise pick a name that is free or a folder.
-    for (const seg of segs.slice(0, -1)) {
-      placed.push(await this.pickName(placed, seg, true));
-    }
-    await mkdir(path.join(this.dir, ...placed), { recursive: true });
-    placed.push(await this.pickName(placed, segs[segs.length - 1], false));
-    await rename(entry.abs, path.join(this.dir, ...placed));
-    return placed.join("/");
+  moveToTrash(entry: TrashSource, now: Date = new Date()): Promise<string> {
+    return this.place(entry, now, (dest) => moveNoReplace(entry.abs, dest));
   }
 
   /**
-   * First of `name`, `name (2)`, `name (3)`, ... (suffix before the extension
-   * for files) inside `parent` that is free, or (if `folderOk`) an existing folder.
+   * Put a copy of a file into today's Trash folder and leave the original in
+   * place (a hard link where possible, so no data is copied). Used before an
+   * atomic replace, so the target is never missing. Returns the Trash-relative Path.
    */
-  private async pickName(parent: string[], name: string, folderOk: boolean): Promise<string> {
-    const ext = folderOk ? "" : path.extname(name);
+  copyToTrash(entry: TrashSource, now: Date = new Date()): Promise<string> {
+    return this.place(entry, now, (dest) => copyNoReplace(entry.abs, dest));
+  }
+
+  /**
+   * Create the dated parent folders, then try `put(dest)` with `name`, `name (2)`,
+   * ... (suffix before the extension) until it succeeds; `put` returns false if
+   * `dest` already exists.
+   */
+  private async place(entry: TrashSource, now: Date, put: (dest: string) => Promise<boolean>): Promise<string> {
+    const segs = [dateFolder(now), ...entry.path.split("/")];
+    const placed: string[] = [];
+    for (const seg of segs.slice(0, -1)) placed.push(await this.folder(placed, seg));
+    const name = segs[segs.length - 1];
+    const ext = path.extname(name);
     const stem = name.slice(0, name.length - ext.length);
     for (let n = 1; ; n++) {
       const candidate = n === 1 ? name : `${stem} (${n})${ext}`;
-      const st = await lstat(path.join(this.dir, ...parent, candidate)).catch(() => null);
-      if (!st || (folderOk && st.isDirectory())) return candidate;
+      if (await put(path.join(this.dir, ...placed, candidate))) return [...placed, candidate].join("/");
     }
+  }
+
+  /** First of `name`, `name (2)`, ... inside `parent` that is (or could be created as) a folder. */
+  private async folder(parent: string[], name: string): Promise<string> {
+    await mkdir(path.join(this.dir, ...parent), { recursive: true });
+    for (let n = 1; ; n++) {
+      const candidate = n === 1 ? name : `${name} (${n})`;
+      const abs = path.join(this.dir, ...parent, candidate);
+      try {
+        await mkdir(abs);
+        return candidate;
+      } catch (err) {
+        if (errnoCode(err) !== "EEXIST") throw err;
+        if ((await lstat(abs)).isDirectory()) return candidate;
+      }
+    }
+  }
+}
+
+/** Move `src` to `dest` without ever replacing `dest`. Returns false if `dest` exists. */
+async function moveNoReplace(src: string, dest: string): Promise<boolean> {
+  const st = await lstat(src);
+  try {
+    if (st.isDirectory()) {
+      // Reserve the name with an exclusive mkdir, then rename over our own empty
+      // reservation (POSIX rename replaces an empty folder; a non-empty one fails).
+      await mkdir(dest);
+      try {
+        await rename(src, dest);
+      } catch (err) {
+        await rmdir(dest).catch(() => {});
+        throw err;
+      }
+    } else if (st.isSymbolicLink()) {
+      await symlink(await readlink(src), dest);
+      await unlink(src);
+    } else {
+      try {
+        await link(src, dest);
+      } catch (err) {
+        if (!NO_LINK.has(errnoCode(err) ?? "")) throw err;
+        // No hard links here: check-then-rename, protected only by the write lock.
+        if (await lstat(dest).then(() => true, () => false)) return false;
+        await rename(src, dest);
+        return true;
+      }
+      await unlink(src);
+    }
+    return true;
+  } catch (err) {
+    if (errnoCode(err) === "EEXIST") return false;
+    throw err;
+  }
+}
+
+/** Hard-link (or, where unsupported, copy) the file `src` to `dest` without replacing `dest`. False if `dest` exists. */
+async function copyNoReplace(src: string, dest: string): Promise<boolean> {
+  try {
+    try {
+      await link(src, dest);
+    } catch (err) {
+      if (!NO_LINK.has(errnoCode(err) ?? "")) throw err;
+      await copyFile(src, dest, constants.COPYFILE_EXCL);
+    }
+    return true;
+  } catch (err) {
+    if (errnoCode(err) === "EEXIST") return false;
+    throw err;
   }
 }
 
