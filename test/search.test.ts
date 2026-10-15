@@ -176,7 +176,7 @@ describe("search and Hidden Entries", () => {
       setup: async (root) => {
         await symlink(outside, path.join(root, "visible", "escape"));
       },
-      env: { NAS_MCP_HIDDEN_PATTERNS: "private" },
+      env: { NAS_MCP_HIDDEN_PATTERNS: "private", NAS_MCP_TRASH_RETENTION_DAYS: "0" },
     });
   });
   afterAll(async () => {
