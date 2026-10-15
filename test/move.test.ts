@@ -35,7 +35,7 @@ describe("move", () => {
         "audit/x.txt": "x",
         "audit/y.txt": "y",
       },
-      env: { NAS_MCP_HIDDEN_PATTERNS: "private" },
+      env: { NAS_MCP_HIDDEN_PATTERNS: "private", NAS_MCP_TRASH_RETENTION_DAYS: "0" },
       setup: async (root) => {
         await symlink(path.join(root, "docs", "real.md"), path.join(root, "alias.md"));
         await symlink(path.join(outside, "secret.txt"), path.join(root, "leak.txt"));

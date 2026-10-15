@@ -26,7 +26,7 @@ describe("delete", () => {
         ".nas-mcp-trash/2026-01-01/old.txt": "old",
         "audit/x.txt": "x",
       },
-      env: { NAS_MCP_HIDDEN_PATTERNS: "private" },
+      env: { NAS_MCP_HIDDEN_PATTERNS: "private", NAS_MCP_TRASH_RETENTION_DAYS: "0" },
       setup: async (root) => {
         await symlink(path.join(root, "docs", "real.md"), path.join(root, "alias.md"));
         await symlink(path.join(root, "docs"), path.join(root, "docs-link"));
