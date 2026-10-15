@@ -2,7 +2,8 @@
  * Builds an McpServer with every tool from `tools/index.ts` registered,
  * wrapping handlers so ToolErrors become MCP tool errors and failures are audited:
  * rejections (`forbidden`) from any tool, and every other failure of a write /
- * Destructive Operation tool (any tool without `readOnlyHint`).
+ * Destructive Operation tool (any tool without `readOnlyHint`). Those tools are
+ * also serialized through the write lock.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -12,6 +13,7 @@ import { ToolError } from "./errors.js";
 import { Sandbox } from "./sandbox.js";
 import { tools } from "./tools/index.js";
 import { Trash } from "./trash.js";
+import { withWriteLock } from "./write-lock.js";
 import type { ToolContext } from "./tools/types.js";
 
 export const SERVER_NAME = "dreambig-nas-mcp";
@@ -43,7 +45,8 @@ export function createMcpServer(config: Config): McpServer {
       (async (args: any) => {
         const mutating = !tool.annotations.readOnlyHint;
         try {
-          return await tool.handler(args, ctx);
+          // Every change to the Root runs under the one write lock (see write-lock.ts).
+          return await (mutating ? withWriteLock(() => tool.handler(args, ctx)) : tool.handler(args, ctx));
         } catch (err) {
           if (err instanceof ToolError) {
             if (err.code === "forbidden") {

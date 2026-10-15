@@ -56,6 +56,7 @@ export const editTool = defineTool({
     let trashedAt = "";
     await atomicWriteText(entry.real, updated, {
       beforeRename: async () => {
+        await sandbox.recheck(entry.real, entry.path);
         trashedAt = await trash.moveToTrash({ path: sandbox.relativePath(entry.real), abs: entry.real });
       },
     });

@@ -198,6 +198,20 @@ export class Sandbox {
     throw new ToolError("not_found", "Root is missing", [rel]);
   }
 
+  /**
+   * Re-verify, right before a rename/replace, that the real parent folder of an
+   * absolute location from `resolve*` is still that real folder (no symlink was
+   * swapped into the chain since it was resolved). Cheap: one realpath call.
+   * Only narrows the window for changes made outside this server; see write-lock.ts.
+   */
+  async recheck(abs: string, rel: string): Promise<void> {
+    const dir = path.dirname(abs);
+    const real = await realpath(dir).catch(() => null);
+    if (real !== dir) {
+      throw new ToolError("forbidden", `a parent folder of ${rel} changed during the operation; try again`, [rel]);
+    }
+  }
+
   /** Visible children of a resolved folder, sorted by name. */
   async children(dir: Resolved): Promise<Child[]> {
     let dirents;

@@ -49,6 +49,8 @@ export const moveTool = defineTool({
 
     await mkdirs(path.dirname(targetAt), target.path);
     const trashed = replacing ? [await trash.moveToTrash({ path: targetAtPath, abs: targetAt })] : undefined;
+    await sandbox.recheck(source.at, source.path);
+    await sandbox.recheck(targetAt, target.path);
     await rename(source.at, targetAt);
     audit({ result: "ok", tool: "move", paths: [source.path, target.path], ...(trashed ? { trashed } : {}) });
     return structured({ from: source.path, to: target.path, replaced: replacing });

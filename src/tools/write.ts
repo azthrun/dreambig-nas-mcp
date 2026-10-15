@@ -36,11 +36,10 @@ export const writeTool = defineTool({
     await mkdirs(path.dirname(target.real), target.path);
     let trashedAt: string | undefined;
     await atomicWriteText(target.real, content, {
-      beforeRename: existing
-        ? async () => {
-            trashedAt = await trash.moveToTrash({ path: sandbox.relativePath(target.real), abs: target.real });
-          }
-        : undefined,
+      beforeRename: async () => {
+        await sandbox.recheck(target.real, target.path);
+        if (existing) trashedAt = await trash.moveToTrash({ path: sandbox.relativePath(target.real), abs: target.real });
+      },
     });
     audit({ result: "ok", tool: "write", paths: [target.path], ...(trashedAt ? { trashed: [trashedAt] } : {}) });
     return structured({ path: target.path, size: Buffer.byteLength(content), replaced: !!existing });
