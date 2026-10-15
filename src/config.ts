@@ -19,6 +19,14 @@ export interface Config {
   trashDirName: string;
   /** Extra Hidden Entry glob patterns from NAS_MCP_HIDDEN_PATTERNS. */
   extraHiddenPatterns: string[];
+  /** Max bytes `read` returns for text (whole file or one offset/limit part) and max PDF file size. */
+  readTextMaxBytes: number;
+  /** Max image file size `read` returns. */
+  readImageMaxBytes: number;
+  /** search: max results per call (NAS_MCP_SEARCH_MAX_RESULTS, default 100). */
+  searchMaxResults: number;
+  /** search: content grep skips files larger than this (NAS_MCP_GREP_MAX_FILE_BYTES, default 5 MB). */
+  grepMaxFileBytes: number;
 }
 
 export class ConfigError extends Error {}
@@ -74,5 +82,9 @@ export function loadConfig(env: Env = process.env): Config {
     host: env.NAS_MCP_HOST?.trim() || "0.0.0.0",
     trashDirName: ".nas-mcp-trash",
     extraHiddenPatterns: list(env, "NAS_MCP_HIDDEN_PATTERNS"),
+    readTextMaxBytes: int(env, "NAS_MCP_READ_TEXT_MAX_BYTES", 10 * 1024 * 1024, 1),
+    readImageMaxBytes: int(env, "NAS_MCP_READ_IMAGE_MAX_BYTES", 20 * 1024 * 1024, 1),
+    searchMaxResults: int(env, "NAS_MCP_SEARCH_MAX_RESULTS", 100, 1, 10_000),
+    grepMaxFileBytes: int(env, "NAS_MCP_GREP_MAX_FILE_BYTES", 5 * 1024 * 1024, 1),
   };
 }

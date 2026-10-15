@@ -1,0 +1,28 @@
+# Synology Container Manager Project (DS220+, linux/amd64).
+# Put this file and a filled-in copy of .env.example named .env in the project folder.
+# Values in ${...} come from that .env; the container also reads it via env_file.
+name: dreambig-nas-mcp
+
+services:
+  nas-mcp:
+    image: ghcr.io/azthrun/dreambig-nas-mcp:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    # Run as the dedicated DSM user, never root.
+    user: "${NAS_MCP_UID:?set NAS_MCP_UID in .env}:${NAS_MCP_GID:?set NAS_MCP_GID in .env}"
+    env_file: .env
+    environment:
+      # Fixed inside the container: the Root is always mounted at /data, the server always listens on 8080.
+      NAS_MCP_ROOT: /data
+      NAS_MCP_PORT: "8080"
+      NAS_MCP_HOST: 0.0.0.0
+    volumes:
+      - "${NAS_MCP_ROOT_HOST_PATH:?set NAS_MCP_ROOT_HOST_PATH in .env}:/data"
+    ports:
+      - "${NAS_MCP_HOST_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
