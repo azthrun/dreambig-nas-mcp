@@ -1,0 +1,27 @@
+/**
+ * The single list of tools. To add a tool: create `src/tools/<name>.ts`
+ * exporting a `defineTool(...)`, import it here, and append it to `tools`
+ * (one line each, to keep parallel merges trivial).
+ */
+import { listTool } from "./list.js";
+import { statTool } from "./stat.js";
+import { readTool } from "./read.js";
+import { searchTool } from "./search.js";
+import { writeTool } from "./write.js";
+import { editTool } from "./edit.js";
+import { mkdirTool } from "./mkdir.js";
+import { deleteTool } from "./delete.js";
+import { moveTool } from "./move.js";
+import type { ToolDefinition } from "./types.js";
+
+export const tools: ToolDefinition<any, any>[] = [
+  listTool,
+  statTool,
+  readTool,
+  searchTool,
+  writeTool,
+  editTool,
+  mkdirTool,
+  deleteTool,
+  moveTool,
+];
