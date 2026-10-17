@@ -10,10 +10,10 @@ export const editTool = defineTool({
   name: "edit",
   title: "Edit text file",
   description:
-    "Replace an exact string in a UTF-8 text file inside the Root. Fails if `oldString` is not found, or is found " +
+    "Replace an exact string in a UTF-8 text file inside a Mount (not in a read-only one). Fails if `oldString` is not found, or is found " +
     "more than once unless `replaceAll: true`. The pre-edit version is moved to the Trash (recoverable by the NAS owner).",
   inputSchema: {
-    path: z.string().describe('Root-relative Path of the file, e.g. "notes/plan.md"'),
+    path: z.string().describe('Root-relative Path of the file, e.g. "docs/notes/plan.md"'),
     oldString: z.string().describe("Exact text to replace (whitespace and line breaks must match)"),
     newString: z.string().describe("Replacement text"),
     replaceAll: z.boolean().optional().describe("Replace every occurrence instead of requiring a unique match. Default false."),
@@ -24,7 +24,7 @@ export const editTool = defineTool({
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   async handler({ path: input, oldString, newString, replaceAll }, { sandbox, trash, config }) {
-    const entry = await sandbox.resolve(input);
+    const entry = await sandbox.resolveForChange(input);
     const st = await stat(entry.real);
     if (!st.isFile()) throw new ToolError("not_a_file", `${entry.path} is not a file`, [entry.path]);
     if (st.size > config.readTextMaxBytes) {

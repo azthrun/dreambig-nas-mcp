@@ -6,20 +6,20 @@ describe("audit log for failed write and Destructive Operation calls", () => {
   let s: TestServer;
   beforeAll(async () => {
     s = await startServer({
-      layout: { "a.txt": "same same", "b.txt": "b", "file/": "", "f.txt": "f" },
+      layout: { "m/a.txt": "same same", "m/b.txt": "b", "m/file/": "", "m/f.txt": "f" },
     });
   });
   afterAll(() => s.stop());
 
   const cases: [string, Record<string, unknown>, string, string[]][] = [
-    ["write", { path: "a.txt", content: "x" }, "exists", ["a.txt"]],
-    ["edit", { path: "a.txt", oldString: "nope", newString: "x" }, "no_match", ["a.txt"]],
-    ["edit", { path: "a.txt", oldString: "same", newString: "x" }, "not_unique", ["a.txt"]],
-    ["edit", { path: "missing.txt", oldString: "a", newString: "b" }, "not_found", ["missing.txt"]],
-    ["mkdir", { path: "f.txt" }, "exists", ["f.txt"]],
-    ["move", { from: "missing.txt", to: "x.txt" }, "not_found", ["missing.txt"]],
-    ["move", { from: "b.txt", to: "a.txt" }, "exists", ["a.txt"]],
-    ["delete", { path: "missing.txt" }, "not_found", ["missing.txt"]],
+    ["write", { path: "m/a.txt", content: "x" }, "exists", ["m/a.txt"]],
+    ["edit", { path: "m/a.txt", oldString: "nope", newString: "x" }, "no_match", ["m/a.txt"]],
+    ["edit", { path: "m/a.txt", oldString: "same", newString: "x" }, "not_unique", ["m/a.txt"]],
+    ["edit", { path: "m/missing.txt", oldString: "a", newString: "b" }, "not_found", ["m/missing.txt"]],
+    ["mkdir", { path: "m/f.txt" }, "exists", ["m/f.txt"]],
+    ["move", { from: "m/missing.txt", to: "m/x.txt" }, "not_found", ["m/missing.txt"]],
+    ["move", { from: "m/b.txt", to: "m/a.txt" }, "exists", ["m/a.txt"]],
+    ["delete", { path: "m/missing.txt" }, "not_found", ["m/missing.txt"]],
   ];
 
   for (const [tool, args, code, paths] of cases) {
@@ -35,7 +35,7 @@ describe("audit log for failed write and Destructive Operation calls", () => {
   }
 
   it("does not audit failed read-only calls", async () => {
-    const r = await s.call("read", { path: "missing.txt" });
+    const r = await s.call("read", { path: "m/missing.txt" });
     expect(textOf(r)).toMatch(/^not_found:/);
     await new Promise((r) => setTimeout(r, 200));
     expect(s.auditLines().filter((l) => l.tool === "read")).toEqual([]);

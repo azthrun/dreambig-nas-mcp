@@ -1,34 +1,38 @@
 # dreambig-nas-mcp
 
-An MCP server that runs in a container on a Synology NAS and lets agents (Claude Code, Claude Desktop) read and manage files inside one NAS folder, the **Root**. Nothing outside the Root is visible.
+An MCP server that runs in a container on a Synology NAS and lets agents (Claude Code, Claude Desktop) read and manage files inside one or more NAS shared folders. Each is a **Mount**: a top-level folder of the **Root** that every Path starts with (e.g. `documents/notes/plan.md`). A Mount can be read-only. Nothing else on the NAS is visible.
 
 - Tools: `list`, `stat`, `read` (text, PDF text, images), `search` (name glob + optional content grep), `write`, `edit`, `mkdir`, `move`, `delete`.
 - Transport: Streamable HTTP at `http://<nas>:<port>/mcp`, LAN only (remote access via Tailscale), one static bearer token ([ADR-0002](docs/adr/0002-lan-only-static-bearer-token.md)).
-- Nothing is ever really deleted by an agent: deleted and overwritten content goes to a Trash folder inside the Root ([ADR-0001](docs/adr/0001-delete-moves-to-trash.md)).
-- Vocabulary (Root, Path, Trash, Hidden Entry, Destructive Operation): [GLOSSARY.md](GLOSSARY.md).
+- Nothing is ever really deleted by an agent: deleted and overwritten content goes to a Trash folder inside its Mount ([ADR-0001](docs/adr/0001-delete-moves-to-trash.md)). Mounts: [ADR-0003](docs/adr/0003-several-mounts-under-a-virtual-root.md).
+- Vocabulary (Root, Mount, Path, Trash, Hidden Entry, Destructive Operation): [GLOSSARY.md](GLOSSARY.md).
+- Upgrading from v1 (one folder as the Root): see [Migrating from v1](#migrating-from-v1-single-root).
 
 Target: DS220+ (Intel, `linux/amd64`), DSM 7.4.1, Container Manager.
 
 ## Synology setup
 
-You need: DSM admin access, a Mac on the same LAN, and the NAS's LAN IP address (Control Panel > Network > Network Interface). This README uses `192.168.1.10` as a placeholder; substitute your NAS's actual IP everywhere. Don't use the router/default gateway IP (often `x.x.x.1`); it isn't the NAS. Below, `agents` is the example shared folder used as the Root and `nas-mcp` the example DSM user; use your own names.
+You need: DSM admin access, a Mac on the same LAN, and the NAS's LAN IP address (Control Panel > Network > Network Interface). This README uses `192.168.1.10` as a placeholder; substitute your NAS's actual IP everywhere. Don't use the router/default gateway IP (often `x.x.x.1`); it isn't the NAS. Below, `agents` (read/write) and `photos` (read-only) are the example shared folders used as Mounts and `nas-mcp` the example DSM user; use your own names.
 
-### 1. Choose or create the Root's shared folder
+### 1. Choose or create the shared folders (Mounts)
+
+For each folder agents should see:
 
 1. DSM > **Control Panel > Shared Folder**.
 2. Either pick an existing shared folder, or click **Create > Create Shared Folder**, name it (e.g. `agents`), pick the volume (e.g. Volume 1), and finish the wizard (you can leave encryption and advanced options off).
 3. Note its NAS path: `/volume1/agents` (volume number + folder name). You can also use a sub-folder, e.g. `/volume1/agents/claude`; the agent sees only what is mounted.
+4. Decide its Mount name (the top-level folder agents see, e.g. `agents`; letters, digits, `-`/`_`; not starting with `.`) and whether agents may change it (read/write) or only read it (read-only).
 
 ### 2. Create a dedicated DSM user
 
 1. **Control Panel > User & Group > User > Create**.
 2. Name: `nas-mcp`. Set a long random password (nobody needs to log in as this user). Tick **Disallow the user to change account password**. Next.
 3. **Join groups**: leave only `users`. Next.
-4. **Assign shared folders permissions**: tick **Read/Write** for `agents` only; tick **No access** for every other shared folder. Next.
+4. **Assign shared folders permissions**: tick **Read/Write** for each read/write Mount (e.g. `agents`) and **Read only** for each read-only Mount (e.g. `photos`); tick **No access** for every other shared folder. Next.
 5. **Assign user quota**: skip. Next.
 6. **Assign application permissions**: tick **Deny** for every application (the container does not need DSM apps). Next.
 7. **Set user speed limit**: skip. Next, **Done**.
-8. Check: **Control Panel > Shared Folder >** select `agents` **> Edit > Permissions** shows `nas-mcp` with Read/Write. If you picked an existing folder, also make sure no group gives `nas-mcp` access to other folders (the `users` group's permissions apply to it too: check **User & Group > Group > users > Edit > Permissions**).
+8. Check: **Control Panel > Shared Folder >** select `agents` **> Edit > Permissions** shows `nas-mcp` with Read/Write (and `photos` with Read only). If you picked an existing folder, also make sure no group gives `nas-mcp` access to other folders (the `users` group's permissions apply to it too: check **User & Group > Group > users > Edit > Permissions**).
 
 ### 3. Find the user's UID and GID
 
@@ -51,7 +55,7 @@ The container never runs as root: `NAS_MCP_UID` and `NAS_MCP_GID` must be these 
 
 ### 4. Generate the bearer token
 
-On the Mac: `openssl rand -hex 32`. Copy the 64-character output; it is `NAS_MCP_TOKEN` below and goes into each client config. Treat it like a password (anyone on the LAN who has it can read and change files in the Root). To rotate it later, change it in `.env`, rebuild the Project (step 7), and update the clients.
+On the Mac: `openssl rand -hex 32`. Copy the 64-character output; it is `NAS_MCP_TOKEN` below and goes into each client config. Treat it like a password (anyone on the LAN who has it can read and change files in the Mounts). To rotate it later, change it in `.env`, rebuild the Project (step 7), and update the clients.
 
 ### 5. Image access (GHCR)
 
@@ -62,11 +66,10 @@ The image is `ghcr.io/azthrun/dreambig-nas-mcp:latest` (`linux/amd64`), built an
 
 ### 6. Prepare the Project folder and `.env`
 
-1. **File Station**: create a folder for the Project, e.g. `docker/dreambig-nas-mcp` (create the `docker` shared folder first if you don't have one). Do not put it inside the Root.
+1. **File Station**: create a folder for the Project, e.g. `docker/dreambig-nas-mcp` (create the `docker` shared folder first if you don't have one). Do not put it inside a Mount, and don't mount the `docker` folder. A `volumes:` line whose NAS path doesn't exist makes Docker create an empty folder there, so the Mount shows up empty: check the paths.
 2. On the Mac, copy [`.env.example`](.env.example) from this repo to a file named `env.txt` and fill in:
    - `NAS_MCP_TOKEN` = the token from step 4
    - `NAS_MCP_UID`, `NAS_MCP_GID` = the numbers from step 3
-   - `NAS_MCP_ROOT_HOST_PATH` = the Root's NAS path from step 1, e.g. `/volume1/agents`
    - `NAS_MCP_HOST_PORT` = a free port on the NAS (default `8080`; DSM itself uses 5000/5001)
    - Leave `NAS_MCP_ROOT`, `NAS_MCP_PORT`, `NAS_MCP_HOST` as they are (compose fixes them). Other settings: see [Settings](#settings).
 3. In File Station, upload `env.txt` into `docker/dreambig-nas-mcp`, then right-click it > **Rename** to `.env`. (File Station hides dot-files unless **Settings > General > Show hidden files** is ticked; the file is still there.)
@@ -76,10 +79,20 @@ The image is `ghcr.io/azthrun/dreambig-nas-mcp:latest` (`linux/amd64`), built an
 
 1. Install **Container Manager** from Package Center if it isn't installed.
 2. **Container Manager > Project > Create**.
-3. **Project name**: `dreambig-nas-mcp`. **Path**: the folder from step 6 (`/docker/dreambig-nas-mcp`). **Source**: **Upload compose.yaml / docker-compose.yml** and pick [`compose.yaml`](compose.yaml) from this repo (or **Create docker-compose.yml** and paste its contents). Next.
+3. **Project name**: `dreambig-nas-mcp`. **Path**: the folder from step 6 (`/docker/dreambig-nas-mcp`). **Source**: **Create docker-compose.yml** and paste the contents of [`compose.yaml`](compose.yaml) from this repo. In the editor, replace the example `volumes:` lines with one line per Mount from step 1, `<NAS path>:/data/<Mount name>`, adding `:ro` for a read-only Mount:
+
+   ```yaml
+       volumes:
+         - /volume1/agents:/data/agents
+         - /volume1/photos:/data/photos:ro
+   ```
+
+   Next.
 4. **Web portal settings**: leave Web Station off. Next.
-5. Review, tick **Start the project once it is created**, **Done**. Container Manager pulls the image and starts the container. A compose error naming `NAS_MCP_UID`, `NAS_MCP_GID` or `NAS_MCP_ROOT_HOST_PATH` means `.env` is missing from the Project folder or lacks that value.
+5. Review, tick **Start the project once it is created**, **Done**. Container Manager pulls the image and starts the container. A compose error naming `NAS_MCP_UID` or `NAS_MCP_GID` means `.env` is missing from the Project folder or lacks that value.
 6. If the DSM firewall is on (**Control Panel > Security > Firewall**), add a rule allowing TCP `NAS_MCP_HOST_PORT` from your LAN subnet only.
+
+Adding or removing a Mount later: **Project >** `dreambig-nas-mcp` **> Action > Stop**, **YAML configurations** (or **Edit**), change the `volumes:` lines, save, then **Action > Build**.
 
 Updating later: **Container Manager > Image** shows **Update available** on `ghcr.io/azthrun/dreambig-nas-mcp`; click it, or **Project >** `dreambig-nas-mcp` **> Action > Stop**, then **Action > Build** to pull and recreate.
 
@@ -88,7 +101,8 @@ Updating later: **Container Manager > Image** shows **Update available** on `ghc
 1. **Container Manager > Container**: the `dreambig-nas-mcp-nas-mcp-1` container shows **Running** and, after ~15 s, healthy (compose healthcheck on `/healthz` every 30 s).
 2. On the Mac: `curl http://192.168.1.10:8080/healthz` prints `{"status":"ok"}`.
 3. Auth check: `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://192.168.1.10:8080/mcp` prints `401` (no token rejected).
-4. If the container keeps restarting, open its log (**Container > select > Details > Log**). Startup errors read `Config error: ...`, e.g. the token is unset or the Root is missing/unreadable (wrong `NAS_MCP_ROOT_HOST_PATH`, or `nas-mcp` lacks permission on the shared folder).
+4. If the container keeps restarting, open its log (**Container > select > Details > Log**). Startup errors read `Config error: ...`, e.g. the token is unset, a folder under `/data` is not a mount point (a container path like `/data/a/b` nests a Mount; the old v1 line mounts one folder at `/data` itself, see [Migrating from v1](#migrating-from-v1-single-root)), a Mount name is reserved (starts with `.`, `@eaDir`, `#recycle`, ...), or `nas-mcp` lacks permission on a shared folder. A line `"type":"warning"` naming a Mount means the server can't write to it and treats it as read-only: grant `nas-mcp` Read/Write in DSM, or add `:ro` if that is what you want.
+5. The startup line `"type":"listening"` lists the Mounts, with `(read-only)` after read-only ones.
 
 ### 9. Remote access (Tailscale, optional)
 
@@ -182,10 +196,11 @@ All settings are env vars, read at startup; the server refuses to start with a c
 | Env var | Default | Meaning |
 | --- | --- | --- |
 | `NAS_MCP_TOKEN` | (required) | Bearer token every `/mcp` request must send as `Authorization: Bearer <token>`. Generate with `openssl rand -hex 32`. At least 16 characters; the `.env.example` placeholder is refused. |
-| `NAS_MCP_ROOT` | (required; compose: `/data`) | The Root as seen inside the container. Fixed by `compose.yaml`; set only when running outside the container. |
+| `NAS_MCP_ROOT` | (required; compose: `/data`) | The Root as seen inside the container: every folder under it is a Mount. Fixed by `compose.yaml`; set only when running outside the container. The Mounts themselves are `volumes:` lines in `compose.yaml`. |
+| `NAS_MCP_REQUIRE_MOUNT_POINTS` | `true` | Every folder under the Root must be its own mount point (catches the v1 single-folder layout and nested container paths in `volumes:` lines). Set `false` only to run outside the container with plain folders as Mounts. |
 | `NAS_MCP_PORT` | `8080` | Listen port inside the container (`0` = pick a free port). Fixed by `compose.yaml`. |
 | `NAS_MCP_HOST` | `0.0.0.0` | Listen address. Fixed by `compose.yaml`. |
-| `NAS_MCP_HIDDEN_PATTERNS` | (empty) | Extra Hidden Entry globs, comma-separated. No `/` = entry name at any depth (`*.tmp`, `private`); with `/` = Root-relative Path (`family/taxes`). `*` does not match dotfiles (use `.*`). |
+| `NAS_MCP_HIDDEN_PATTERNS` | (empty) | Extra Hidden Entry globs, comma-separated. No `/` = entry name at any depth (`*.tmp`, `private`); with `/` = Root-relative Path, starting with the Mount (`agents/family/taxes`). `*` does not match dotfiles (use `.*`). |
 | `NAS_MCP_READ_TEXT_MAX_BYTES` | `10485760` (10 MB) | Max text `read` (whole file or one offset/limit part) and max PDF file size. |
 | `NAS_MCP_READ_IMAGE_MAX_BYTES` | `20971520` (20 MB) | Max image file size for `read`. |
 | `NAS_MCP_SEARCH_MAX_RESULTS` | `100` | Max results per `search` call (1-10000); the result says when it was truncated. |
@@ -194,25 +209,36 @@ All settings are env vars, read at startup; the server refuses to start with a c
 | `NAS_MCP_TRASH_PURGE_INTERVAL_SECONDS` | `3600` | Seconds between Trash purges while running (also purged at startup). |
 | `NAS_MCP_UID` | (required, compose only) | UID of the dedicated DSM user the container runs as (never `0`). |
 | `NAS_MCP_GID` | (required, compose only) | GID the container runs as (e.g. `100` = `users`). |
-| `NAS_MCP_ROOT_HOST_PATH` | (required, compose only) | NAS folder bind-mounted as the Root, e.g. `/volume1/agents`. |
 | `NAS_MCP_HOST_PORT` | `8080` (compose only) | NAS port mapped to the container's port 8080. |
 
 ## Safety model
 
-- **Root sandbox.** Every Path is relative to the Root. `..`, absolute paths, and symlinks resolving outside the Root are refused. The container runs as the dedicated DSM user, so DSM permissions are a second fence.
-- **Trash instead of delete.** `delete`, overwriting `write`/`move`, and `edit` move the old content to `.nas-mcp-trash/<YYYY-MM-DD>/<original Path>` at the top of the Root (name clashes get ` (2)`, ` (3)`, ...). Synology's own `#recycle` does not catch deletes made from inside a container, which is why this exists. Trash entries are purged after `NAS_MCP_TRASH_RETENTION_DAYS`; until then they still use disk space. The date folder is the container's local date, which is UTC unless you set `TZ`.
+- **Root sandbox.** Every Path is relative to the Root and starts with a Mount. `..`, absolute paths, and symlinks resolving outside the Mounts are refused. The container runs as the dedicated DSM user, so DSM permissions are a second fence.
+- **Mounts.** The top level is read-only: agents can't create, rename or delete a Mount or put files beside the Mounts. Read-only Mounts refuse every change, even through a symlink. `move` works only within one Mount (between Mounts: read, write, delete).
+- **Trash instead of delete.** `delete`, overwriting `write`/`move`, and `edit` move the old content to `<Mount>/.nas-mcp-trash/<YYYY-MM-DD>/<original Path inside the Mount>` at the top of its Mount (name clashes get ` (2)`, ` (3)`, ...). Synology's own `#recycle` does not catch deletes made from inside a container, which is why this exists. Trash entries are purged after `NAS_MCP_TRASH_RETENTION_DAYS`; until then they still use disk space. The date folder is the container's local date, which is UTC unless you set `TZ`.
 - **Hidden Entries.** The Trash, `@eaDir`, `#recycle`, `#snapshot`, `.DS_Store`, and anything matching `NAS_MCP_HIDDEN_PATTERNS` never appear in `list`/`search` and are refused by every tool. Names and patterns match case-insensitively and after Unicode NFC normalisation (`@EADIR`, `Family/TAXES` are hidden too), and a Path is checked by where it really lands (a symlink to the Root cannot be used to write into the Trash). Agents cannot see or restore from Trash.
 - **Crash-safe writes.** `write` and `edit` write a temp file next to the target (`.<name>.nas-mcp-tmp-<hex>`), sync it, put the old version in the Trash as a hard link (the original stays in place), then rename the temp file over the target in one step, so a crash leaves either the old or the new version, never neither. Temp files left by a crash are removed (and audited) at the next startup.
-- **One change at a time.** All changes to the Root (write, edit, mkdir, move, delete, Trash purge) run one after another inside the server, and nothing placed in the Trash ever replaces an existing Trash entry. Changes made to the Root from outside the server (SMB, File Station) while a call runs are only partly guarded against; avoid reorganising folders while an agent is working in them.
+- **One change at a time.** All changes to the Mounts (write, edit, mkdir, move, delete, Trash purge) run one after another inside the server, and nothing placed in the Trash ever replaces an existing Trash entry. Changes made to the Root from outside the server (SMB, File Station) while a call runs are only partly guarded against; avoid reorganising folders while an agent is working in them.
 - **Client prompts.** `delete`, `move`, `write` and `edit` carry MCP `destructiveHint`; read tools carry `readOnlyHint`, so clients can ask you before Destructive Operations.
 - **Audit log.** Every write and Destructive Operation (including failed ones), every rejected request (bad token, Path escape, Hidden Entry), every Trash purge and every startup temp-file cleanup is one JSON line on stdout (`"type":"audit"`, `time`, `tool`, `paths`, `result`, `trashed`). View it in **Container Manager > Container >** `dreambig-nas-mcp-nas-mcp-1` **> Details > Log** (or **Project >** `dreambig-nas-mcp` **> Details > Log**).
 
 ### Restore something from Trash
 
 1. **File Station > Settings > General**: tick **Show hidden files**, OK (the Trash folder starts with `.`).
-2. Open the Root's shared folder (e.g. `agents`) **> .nas-mcp-trash >** the date it was deleted or overwritten. The audit log's `trashed` field gives the exact Trash Path.
+2. Open the Mount's shared folder (e.g. `agents`) **> .nas-mcp-trash >** the date it was deleted or overwritten. The audit log's `trashed` field gives the exact Path, starting with the Mount (e.g. `agents/.nas-mcp-trash/2026-10-17/notes/plan.md`).
 3. Find the item under its original Path, right-click **> Move to** (or **Copy to**) and pick its original folder. If something with that name exists there now, rename one of them first.
 4. Optionally untick **Show hidden files** again.
+
+## Migrating from v1 (single Root)
+
+v2 serves Mounts instead of one Root folder, and agent Paths now start with the Mount name. With `agents` as your old Root folder:
+
+1. **Container Manager > Project >** `dreambig-nas-mcp` **> Action > Stop**. Don't update the image yet (no **Image > Update available**): v2 refuses to start on the old volume line, so the container would keep restarting.
+2. Open **YAML configurations** (or **Edit**). Replace the old volume line `- "${NAS_MCP_ROOT_HOST_PATH:...}:/data"` with `- /volume1/agents:/data/agents` (your old `NAS_MCP_ROOT_HOST_PATH` value, then `:/data/<Mount name>`). Add a line for any other shared folder (step 1); give `nas-mcp` access to it in DSM (step 2). Save.
+3. In the Project folder's `.env` (File Station, **Show hidden files**), delete the `NAS_MCP_ROOT_HOST_PATH` line. Change any `NAS_MCP_HIDDEN_PATTERNS` entry that contains `/` to start with the Mount name (`family/taxes` becomes `agents/family/taxes`).
+4. **Project >** `dreambig-nas-mcp` **> Action > Build**: this pulls the v2 `:latest` image and recreates the container. Then check health (step 8). The startup log line `"type":"listening"` must list your Mounts.
+5. Your existing Trash (`agents/.nas-mcp-trash`) stays where it is and keeps being purged; nothing in it moves.
+6. Paths change for agents: `notes/plan.md` is now `agents/notes/plan.md`. Update any saved prompts, CLAUDE.md notes or scripts that name Paths.
 
 ## Development
 
@@ -222,7 +248,8 @@ Node 24, TypeScript, `@modelcontextprotocol/sdk`.
 npm ci
 npm test          # builds dist/ and runs the integration tests (MCP over HTTP against a temp Root)
 npm run typecheck
-NAS_MCP_TOKEN="$(openssl rand -hex 32)" NAS_MCP_ROOT=/tmp/root npm run dev
+mkdir -p /tmp/root/docs   # each folder under the Root is a Mount
+NAS_MCP_TOKEN="$(openssl rand -hex 32)" NAS_MCP_ROOT=/tmp/root NAS_MCP_REQUIRE_MOUNT_POINTS=false npm run dev
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs tests and an image smoke test on every PR, and pushes the image to GHCR only when a GitHub release with a `v*` tag is published.

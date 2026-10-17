@@ -1,7 +1,8 @@
 /**
  * Startup cleanup of temp files left by an atomic write that was interrupted
  * (crash, container stop) between writing the temp file and renaming it into
- * place. Walks the Root (Hidden Entries and symlinks are not entered), removes
+ * place. Walks every writable Mount (read-only Mounts, Hidden Entries and
+ * symlinks are not entered), removes
  * every file named like `atomicWriteText`'s temp files, and audits what it
  * removed. Runs under the write lock, so it never races a live write.
  */
@@ -37,7 +38,7 @@ export function cleanupTempFiles(config: Config): Promise<void> {
           }
         }
       };
-      await walk(config.root, "");
+      for (const mount of config.mounts) if (!mount.readOnly) await walk(mount.abs, mount.name);
       if (removed.length) audit({ result: "ok", action: "temp_cleanup", removed });
     } catch (err) {
       audit({ result: "error", action: "temp_cleanup", removed, message: (err as Error).message });

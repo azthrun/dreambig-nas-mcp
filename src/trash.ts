@@ -1,9 +1,10 @@
 /**
  * Trash (ADR-0001): replaced and removed entries are moved here instead of
- * being destroyed. It is a Hidden Entry at the top of the Root, named
- * `config.trashDirName`.
+ * being destroyed. Each writable Mount has its own (ADR-0003), so trashing is
+ * always a rename within one filesystem: a Hidden Entry at the top of the
+ * Mount, named `config.trashDirName`.
  *
- * Layout: `<Root>/<trashDirName>/<YYYY-MM-DD>/<original Root-relative Path>`,
+ * Layout: `<Mount>/<trashDirName>/<YYYY-MM-DD>/<original Path inside the Mount>`,
  * where the date is the day the entry was trashed (server local time).
  *
  * Placement never replaces anything already in the Trash: every placement uses
@@ -17,7 +18,7 @@ import path from "node:path";
 import type { Config } from "./config.js";
 import type { Located, Resolved } from "./sandbox.js";
 
-/** What gets placed: Trash layout Path (Root-relative) and absolute location. */
+/** What gets placed: Root-relative Path of its real location (`<mount>/...`) and absolute location. */
 interface TrashSource {
   path: string;
   abs: string;
@@ -28,23 +29,21 @@ const errnoCode = (err: unknown): string | undefined => (err as NodeJS.ErrnoExce
 /** Hard links are unsupported here (other filesystem, or a filesystem without them). */
 const NO_LINK = new Set(["EXDEV", "EPERM", "ENOTSUP", "ENOSYS", "EOPNOTSUPP", "EMLINK"]);
 
-/** Absolute path of the Trash folder. The one place the Trash location is defined. */
-export const trashDir = (config: Config): string => path.join(config.root, config.trashDirName);
+/** Root-relative Path of a Mount's Trash folder. The one place the Trash location is defined. */
+export const trashPath = (config: Config, mount: string): string => `${mount}/${config.trashDirName}`;
 
 export class Trash {
-  /** Absolute path of the Trash folder. */
-  readonly dir: string;
-  private readonly root: string;
+  private readonly config: Config;
 
   constructor(config: Config) {
-    this.dir = trashDir(config);
-    this.root = config.root;
+    this.config = config;
   }
 
   /**
    * Move an entry as itself (file, folder, or the symlink itself; from
    * `Sandbox.resolveEntry` / `locateForCreate`) into today's Trash folder, keeping
-   * its Root-relative layout. Returns the Trash-relative Path it landed at.
+   * its layout inside the Mount. Returns the Root-relative Path it landed at
+   * (`<mount>/<trash>/<date>/...`).
    */
   moveToTrash(entry: Located, now: Date = new Date()): Promise<string> {
     const src = { path: entry.selfPath, abs: entry.selfAbs };
@@ -55,10 +54,10 @@ export class Trash {
    * Put a copy of a file (its real location: symlinks followed, as from
    * `Sandbox.resolve`) into today's Trash folder and leave the original in
    * place (a hard link where possible, so no data is copied). Used before an
-   * atomic replace, so the target is never missing. Returns the Trash-relative Path.
+   * atomic replace, so the target is never missing. Returns the Root-relative Path it landed at.
    */
   copyToTrash(file: Resolved, now: Date = new Date()): Promise<string> {
-    const src = { path: path.relative(this.root, file.real).split(path.sep).join("/"), abs: file.real };
+    const src = { path: path.relative(this.config.root, file.real).split(path.sep).join("/"), abs: file.real };
     return this.place(src, now, (dest) => copyNoReplace(src.abs, dest));
   }
 
@@ -68,24 +67,27 @@ export class Trash {
    * `dest` already exists.
    */
   private async place(entry: TrashSource, now: Date, put: (dest: string) => Promise<boolean>): Promise<string> {
-    const segs = [dateFolder(now), ...entry.path.split("/")];
+    const [mount, ...inMount] = entry.path.split("/");
+    const trash = trashPath(this.config, mount);
+    const dir = path.join(this.config.root, ...trash.split("/"));
+    const segs = [dateFolder(now), ...inMount];
     const placed: string[] = [];
-    for (const seg of segs.slice(0, -1)) placed.push(await this.folder(placed, seg));
+    for (const seg of segs.slice(0, -1)) placed.push(await this.folder(dir, placed, seg));
     const name = segs[segs.length - 1];
     const ext = path.extname(name);
     const stem = name.slice(0, name.length - ext.length);
     for (let n = 1; ; n++) {
       const candidate = n === 1 ? name : `${stem} (${n})${ext}`;
-      if (await put(path.join(this.dir, ...placed, candidate))) return [...placed, candidate].join("/");
+      if (await put(path.join(dir, ...placed, candidate))) return [trash, ...placed, candidate].join("/");
     }
   }
 
-  /** First of `name`, `name (2)`, ... inside `parent` that is (or could be created as) a folder. */
-  private async folder(parent: string[], name: string): Promise<string> {
-    await mkdir(path.join(this.dir, ...parent), { recursive: true });
+  /** First of `name`, `name (2)`, ... inside `parent` (of the Trash folder `dir`) that is (or could be created as) a folder. */
+  private async folder(dir: string, parent: string[], name: string): Promise<string> {
+    await mkdir(path.join(dir, ...parent), { recursive: true });
     for (let n = 1; ; n++) {
       const candidate = n === 1 ? name : `${name} (${n})`;
-      const abs = path.join(this.dir, ...parent, candidate);
+      const abs = path.join(dir, ...parent, candidate);
       try {
         await mkdir(abs);
         return candidate;

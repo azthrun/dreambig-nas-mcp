@@ -93,6 +93,11 @@ export async function startHttpServer(config: Config): Promise<http.Server> {
 
   await new Promise<void>((resolve) => server.listen(config.port, config.host, resolve));
   const { port } = server.address() as AddressInfo;
-  logInfo("listening", { host: config.host, port, root: config.root });
+  logInfo("listening", {
+    host: config.host,
+    port,
+    root: config.root,
+    mounts: config.mounts.map((m) => (m.readOnly ? `${m.name} (read-only)` : m.name)),
+  });
   return server;
 }

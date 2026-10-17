@@ -10,10 +10,10 @@ export const writeTool = defineTool({
   name: "write",
   title: "Write text file",
   description:
-    "Create a UTF-8 text file inside the Root; missing parent folders are created. Fails if the file exists " +
+    "Create a UTF-8 text file inside a Mount (not in a read-only one); missing parent folders are created. Fails if the file exists " +
     "unless `overwrite: true`, in which case the previous version is moved to the Trash (recoverable by the NAS owner).",
   inputSchema: {
-    path: z.string().describe('Root-relative Path of the file, e.g. "notes/plan.md"'),
+    path: z.string().describe('Root-relative Path of the file, e.g. "docs/notes/plan.md"'),
     content: z.string().describe("Full text content (UTF-8)"),
     overwrite: z.boolean().optional().describe("Replace an existing file (old version goes to Trash). Default false."),
   },

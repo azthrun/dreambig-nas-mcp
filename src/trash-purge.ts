@@ -1,6 +1,7 @@
 /**
  * Trash purge (ADR-0001): permanently removes Trash entries older than the
- * retention period, at startup and then on an interval.
+ * retention period, at startup and then on an interval, in the Trash of every
+ * writable Mount (read-only Mounts are skipped, ADR-0003).
  *
  * Entries are aged by the dated folder they sit in (`<trash>/<YYYY-MM-DD>/`,
  * the day they were trashed, server local time), never by their own mtime:
@@ -14,7 +15,7 @@ import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { audit } from "./audit.js";
 import type { Config } from "./config.js";
-import { trashDir } from "./trash.js";
+import { trashPath } from "./trash.js";
 import { withWriteLock } from "./write-lock.js";
 
 const DATE_FOLDER = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -31,7 +32,7 @@ function ageInDays(name: string, now: Date): number | null {
 
 /**
  * Run one purge. Emits one audit line (`action: "trash_purge"`) listing the
- * purged date folders as Trash-relative Paths. Never throws.
+ * purged date folders as Root-relative Paths (`<mount>/<trash>/<date>`). Never throws.
  */
 export function purgeTrash(config: Config, now: Date = new Date()): Promise<void> {
   if (config.trashRetentionDays === 0) return Promise.resolve();
@@ -39,21 +40,25 @@ export function purgeTrash(config: Config, now: Date = new Date()): Promise<void
 }
 
 async function purgeNow(config: Config, now: Date): Promise<void> {
-  const dir = trashDir(config);
   const purged: string[] = [];
   try {
-    let entries: Dirent[];
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch (err: any) {
-      if (err?.code === "ENOENT") entries = [];
-      else throw err;
-    }
-    for (const e of entries) {
-      const age = ageInDays(e.name, now);
-      if (!e.isDirectory() || age === null || age <= config.trashRetentionDays) continue;
-      await rm(path.join(dir, e.name), { recursive: true, force: true });
-      purged.push(e.name);
+    for (const mount of config.mounts) {
+      if (mount.readOnly) continue;
+      const trash = trashPath(config, mount.name);
+      const dir = path.join(config.root, ...trash.split("/"));
+      let entries: Dirent[];
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch (err: any) {
+        if (err?.code === "ENOENT") continue;
+        throw err;
+      }
+      for (const e of entries) {
+        const age = ageInDays(e.name, now);
+        if (!e.isDirectory() || age === null || age <= config.trashRetentionDays) continue;
+        await rm(path.join(dir, e.name), { recursive: true, force: true });
+        purged.push(`${trash}/${e.name}`);
+      }
     }
     audit({ result: "ok", action: "trash_purge", purged });
   } catch (err) {

@@ -1,7 +1,7 @@
 {
   "name": "dreambig-nas-mcp",
   "version": "0.1.0",
-  "description": "MCP server exposing one NAS folder (the Root) to agents over Streamable HTTP",
+  "description": "MCP server exposing NAS shared folders (Mounts) to agents over Streamable HTTP",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",

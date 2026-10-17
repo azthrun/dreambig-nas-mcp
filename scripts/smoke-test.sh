@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Image smoke test (run by CI; needs Docker).
 # Usage: scripts/smoke-test.sh <image>
-# Starts the image as an arbitrary non-root UID/GID against a temp Root,
-# waits for the image HEALTHCHECK to report healthy, then runs smoke-check.sh.
+# Starts the image as an arbitrary non-root UID/GID with a temp folder as a read-only Mount,
+# waits for the image HEALTHCHECK to report healthy, checks the :ro Mount logged no warning,
+# then runs smoke-check.sh.
 set -euo pipefail
 
 image="${1:?usage: $0 <image>}"
@@ -30,7 +31,7 @@ cid="$(docker run -d \
   --platform linux/amd64 \
   --user "$uid:$gid" \
   -e NAS_MCP_TOKEN="$token" \
-  -v "$root_dir:/data:ro" \
+  -v "$root_dir:/data/smoke:ro" \
   -p 127.0.0.1::8080 \
   "$image")"
 
@@ -60,6 +61,11 @@ for _ in $(seq 1 60); do
 done
 [[ "$health" == "healthy" ]] || fail "container health is \"$health\" after 60 s"
 echo "smoke: ok: container healthcheck is healthy"
+
+# A :ro Mount is read-only by intent and must not log a warning (only an unwritable rw Mount does).
+logs="$(docker logs "$cid" 2>&1)"
+[[ "$logs" != *'"type":"warning"'* ]] || fail "container logged a warning for the :ro Mount: $(grep '"type":"warning"' <<< "$logs")"
+echo "smoke: ok: no startup warning for the :ro Mount"
 
 port="$(docker port "$cid" 8080/tcp | head -n1 | sed 's/.*://')"
 SMOKE_TOKEN="$token" "$here/smoke-check.sh" "http://127.0.0.1:$port"

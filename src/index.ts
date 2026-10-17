@@ -1,3 +1,4 @@
+import { logInfo } from "./audit.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { startHttpServer } from "./http.js";
 import { cleanupTempFiles } from "./temp-cleanup.js";
@@ -20,6 +21,10 @@ try {
     process.exit(1);
   }
   throw err;
+}
+
+for (const mount of config.mounts) {
+  if (mount.readOnlyWarning) logInfo("warning", { mount: mount.name, message: `Mount ${mount.name}: ${mount.readOnlyWarning}` });
 }
 
 const stopPurge = await startTrashPurge(config);

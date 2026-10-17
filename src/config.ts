@@ -4,18 +4,34 @@
  * To add a setting: add a field to `Config`, parse it in `loadConfig` with the
  * helpers below, and list it in `.env.example`.
  */
-import { accessSync, constants, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import path from "node:path";
+import { DEFAULT_HIDDEN_NAMES, fold, hiddenMatcher } from "./hidden.js";
+
+/** A folder at the top of the Root: one NAS shared folder bind-mounted into the container (ADR-0003). */
+export interface Mount {
+  /** Folder name at the top of the Root; the first segment of every Path inside it. */
+  name: string;
+  /** Real absolute path. */
+  abs: string;
+  /** Every change inside it is refused: mounted `:ro` (EROFS, or `ro` in /proc/self/mountinfo), or the server's user cannot write to it. */
+  readOnly: boolean;
+  /** Why it is read-only when the mount itself is not `:ro` (logged as a startup warning). */
+  readOnlyWarning?: string;
+}
 
 export interface Config {
-  /** Real absolute path of the Root. */
+  /** Real absolute path of the Root: the folder whose sub-folders are the Mounts. */
   root: string;
+  /** The Mounts, sorted by name. */
+  mounts: Mount[];
   /** Bearer token required on every /mcp request. */
   token: string;
   /** Listen port (container port; default 8080; 0 = pick a free port). */
   port: number;
   /** Listen address. */
   host: string;
-  /** Name of the Trash folder at the top of the Root (a Hidden Entry). */
+  /** Name of the Trash folder at the top of each Mount (a Hidden Entry). */
   trashDirName: string;
   /** Extra Hidden Entry glob patterns from NAS_MCP_HIDDEN_PATTERNS. */
   extraHiddenPatterns: string[];
@@ -35,7 +51,7 @@ export interface Config {
 
 export class ConfigError extends Error {}
 
-/** Name of the Trash folder at the top of the Root (fixed; not configurable). */
+/** Name of the Trash folder at the top of each Mount (fixed; not configurable). */
 export const TRASH_DIR_NAME = ".nas-mcp-trash";
 
 type Env = Record<string, string | undefined>;
@@ -54,6 +70,14 @@ function int(env: Env, name: string, fallback: number, min = 0, max = Number.MAX
     throw new ConfigError(`${name} must be an integer between ${min} and ${max} (got "${raw}")`);
   }
   return n;
+}
+
+function bool(env: Env, name: string, fallback: boolean): boolean {
+  const raw = env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (raw === "true" || raw === "1") return true;
+  if (raw === "false" || raw === "0") return false;
+  throw new ConfigError(`${name} must be true or false (got "${env[name]}")`);
 }
 
 function list(env: Env, name: string): string[] {
@@ -98,16 +122,103 @@ function validateRoot(raw: string): string {
   return realpathSync(raw);
 }
 
+/**
+ * Whether each mount point is mounted read-only, from /proc/self/mountinfo (Linux;
+ * undefined elsewhere or if unreadable). Needed because access(W_OK) on a `:ro`
+ * bind mount the user also lacks write permission on fails with EACCES, not EROFS.
+ * Later lines shadow earlier ones for the same mount point.
+ */
+function readMountReadOnly(): Map<string, boolean> | undefined {
+  let text: string;
+  try {
+    text = readFileSync("/proc/self/mountinfo", "utf8");
+  } catch {
+    return undefined;
+  }
+  const ro = new Map<string, boolean>();
+  for (const line of text.split("\n")) {
+    // id parent major:minor root mountpoint mountoptions [optional...] - fstype source superoptions
+    const fields = line.split(" ");
+    if (fields.length < 6) continue;
+    const mountPoint = fields[4].replace(/\\([0-7]{3})/g, (_, oct: string) => String.fromCharCode(parseInt(oct, 8)));
+    ro.set(mountPoint, fields[5].split(",").includes("ro"));
+  }
+  return ro;
+}
+
+/**
+ * Discover the Mounts: every entry at the top of the Root must be a folder that
+ * is its own mount point (unless `requireMountPoints` is off, for local runs and
+ * tests) with a usable name. Fails fast on anything else, so a nested container
+ * path in a compose volume line or the old single-folder layout is caught at startup.
+ */
+function discoverMounts(root: string, extraHiddenPatterns: string[], requireMountPoints: boolean): Mount[] {
+  const rootDev = statSync(root).dev;
+  const isHidden = hiddenMatcher(extraHiddenPatterns);
+  const reserved = [...DEFAULT_HIDDEN_NAMES, TRASH_DIR_NAME].map(fold);
+  const seen = new Map<string, string>();
+  const mounts: Mount[] = [];
+  let mountReadOnly: Map<string, boolean> | undefined | null = null; // null = not read yet
+  for (const name of readdirSync(root).sort()) {
+    const abs = path.join(root, name);
+    const st = lstatSync(abs);
+    if (!st.isDirectory()) {
+      throw new ConfigError(
+        `${abs} is not a folder; everything at the top of NAS_MCP_ROOT must be a mounted folder (a Mount), ` +
+          "e.g. /volume1/docs:/data/docs in compose.yaml (see the README migration section)",
+      );
+    }
+    // Before the name checks, so the old single-folder layout (Trash, #recycle at the top) gets the migration hint.
+    if (requireMountPoints && st.dev === rootDev) {
+      throw new ConfigError(
+        `${abs} is not a mount point; mount a shared folder there in compose.yaml (e.g. /volume1/${name}:${abs}), ` +
+          "or remove it. Mounting one folder at NAS_MCP_ROOT itself is the old single-folder layout: see the README migration section",
+      );
+    }
+    if (name.startsWith(".") || reserved.includes(fold(name)) || isHidden(name)) {
+      throw new ConfigError(`Mount name "${name}" is reserved or hidden; mount it under another name`);
+    }
+    const clash = seen.get(fold(name));
+    if (clash) throw new ConfigError(`Mount names "${clash}" and "${name}" differ only in case; rename one`);
+    seen.set(fold(name), name);
+    let readOnly = false;
+    let readOnlyWarning: string | undefined;
+    try {
+      accessSync(abs, constants.R_OK | constants.W_OK | constants.X_OK);
+    } catch (err) {
+      try {
+        accessSync(abs, constants.R_OK | constants.X_OK);
+      } catch {
+        throw new ConfigError(`Mount ${name} is not readable: ${abs}`);
+      }
+      readOnly = true;
+      if ((err as NodeJS.ErrnoException).code !== "EROFS") {
+        if (mountReadOnly === null) mountReadOnly = readMountReadOnly();
+        if (!mountReadOnly?.get(abs)) {
+          readOnlyWarning = "the server's user cannot write to it, so it is read-only; mount it :ro, or grant Read/Write in DSM";
+        }
+      }
+    }
+    mounts.push({ name, abs: realpathSync(abs), readOnly, ...(readOnlyWarning ? { readOnlyWarning } : {}) });
+  }
+  if (mounts.length === 0) {
+    throw new ConfigError(`NAS_MCP_ROOT has no Mounts: ${root}; mount at least one shared folder under it in compose.yaml`);
+  }
+  return mounts;
+}
+
 export function loadConfig(env: Env = process.env): Config {
   const token = validateToken(required(env, "NAS_MCP_TOKEN"));
   const root = validateRoot(required(env, "NAS_MCP_ROOT"));
-  return {
+  const extraHiddenPatterns = list(env, "NAS_MCP_HIDDEN_PATTERNS");
+  const requireMountPoints = bool(env, "NAS_MCP_REQUIRE_MOUNT_POINTS", true);
+  const settings = {
     root,
     token,
     port: int(env, "NAS_MCP_PORT", 8080, 0, 65535),
     host: env.NAS_MCP_HOST?.trim() || "0.0.0.0",
     trashDirName: TRASH_DIR_NAME,
-    extraHiddenPatterns: list(env, "NAS_MCP_HIDDEN_PATTERNS"),
+    extraHiddenPatterns,
     readTextMaxBytes: int(env, "NAS_MCP_READ_TEXT_MAX_BYTES", 10 * 1024 * 1024, 1),
     readImageMaxBytes: int(env, "NAS_MCP_READ_IMAGE_MAX_BYTES", 20 * 1024 * 1024, 1),
     searchMaxResults: int(env, "NAS_MCP_SEARCH_MAX_RESULTS", 100, 1, 10_000),
@@ -115,4 +226,6 @@ export function loadConfig(env: Env = process.env): Config {
     trashRetentionDays: int(env, "NAS_MCP_TRASH_RETENTION_DAYS", 30, 0, 36_500),
     trashPurgeIntervalSeconds: int(env, "NAS_MCP_TRASH_PURGE_INTERVAL_SECONDS", 3600, 1, 2_147_483),
   };
+  // Last, so a bad setting is reported even before any Mount is set up.
+  return { ...settings, mounts: discoverMounts(root, extraHiddenPatterns, requireMountPoints) };
 }
