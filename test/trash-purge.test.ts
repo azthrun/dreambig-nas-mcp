@@ -19,14 +19,14 @@ function daysAgo(n: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-const t = (rel: string) => `${TRASH_DIR}/${rel}`;
+const t = (rel: string) => `m/${TRASH_DIR}/${rel}`;
 
 describe("purge at startup with default retention (30 days)", () => {
   let s: TestServer;
   beforeAll(async () => {
     s = await startServer({
       layout: {
-        "notes/keep.md": "live file",
+        "m/notes/keep.md": "live file",
         [t(`${daysAgo(31)}/notes/old.md`)]: "old",
         [t(`${daysAgo(400)}/photos/`)]: "",
         [t(`${daysAgo(30)}/notes/edge.md`)]: "30 days",
@@ -47,7 +47,7 @@ describe("purge at startup with default retention (30 days)", () => {
   });
 
   it("keeps entries 30 days old or newer, whatever their mtime", async () => {
-    expect(await allEntries(path.join(s.root, TRASH_DIR))).toEqual([
+    expect(await allEntries(path.join(s.root, "m", TRASH_DIR))).toEqual([
       daysAgo(30),
       `${daysAgo(30)}/notes`,
       `${daysAgo(30)}/notes/edge.md`,
@@ -58,13 +58,13 @@ describe("purge at startup with default retention (30 days)", () => {
   });
 
   it("never touches files outside the Trash", () => {
-    expect(existsSync(path.join(s.root, "notes/keep.md"))).toBe(true);
+    expect(existsSync(path.join(s.root, "m/notes/keep.md"))).toBe(true);
   });
 
   it("logs an audit line listing what was purged", async () => {
     const line = await s.waitForAudit((l) => l.action === "trash_purge");
     expect(line.result).toBe("ok");
-    expect([...(line.purged as string[])].sort()).toEqual([daysAgo(31), daysAgo(400)].sort());
+    expect([...(line.purged as string[])].sort()).toEqual([daysAgo(31), daysAgo(400)].map((d) => `m/${TRASH_DIR}/${d}`).sort());
   });
 });
 
@@ -98,8 +98,8 @@ describe("periodic purge while running", () => {
       [t(`${daysAgo(7)}/b.md`)]: "kept",
     });
     const line = await s.waitForAudit((l) => l.action === "trash_purge" && (l.purged as string[]).length > 0, 5_000);
-    expect(line.purged).toEqual([daysAgo(8)]);
-    expect(await allEntries(path.join(s.root, TRASH_DIR))).toEqual([daysAgo(7), `${daysAgo(7)}/b.md`]);
+    expect(line.purged).toEqual([`m/${TRASH_DIR}/${daysAgo(8)}`]);
+    expect(await allEntries(path.join(s.root, "m", TRASH_DIR))).toEqual([daysAgo(7), `${daysAgo(7)}/b.md`]);
   });
 });
 

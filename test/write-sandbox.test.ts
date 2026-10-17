@@ -13,13 +13,13 @@ describe("write targets and the Root sandbox", () => {
     outside = await makeTempDir("nas-mcp-outside-");
     await writeFile(path.join(outside, "secret.txt"), "top secret");
     s = await startServer({
-      layout: { "docs/real.md": "real v1", ".nas-mcp-trash/2026-01-01/gone.txt": "x" },
+      layout: { "m/docs/real.md": "real v1", "m/.nas-mcp-trash/2026-01-01/gone.txt": "x" },
       env: { NAS_MCP_HIDDEN_PATTERNS: "private", NAS_MCP_TRASH_RETENTION_DAYS: "0" },
       setup: async (root) => {
-        await symlink(outside, path.join(root, "leakdir"));
-        await symlink(path.join(outside, "secret.txt"), path.join(root, "leak.txt"));
-        await symlink(path.join(root, "nowhere.txt"), path.join(root, "dangling.txt"));
-        await symlink(path.join(root, "docs", "real.md"), path.join(root, "alias.md"));
+        await symlink(outside, path.join(root, "m/leakdir"));
+        await symlink(path.join(outside, "secret.txt"), path.join(root, "m/leak.txt"));
+        await symlink(path.join(root, "m/nowhere.txt"), path.join(root, "m/dangling.txt"));
+        await symlink(path.join(root, "m/docs", "real.md"), path.join(root, "m/alias.md"));
       },
     });
   });
@@ -37,42 +37,42 @@ describe("write targets and the Root sandbox", () => {
   }
 
   it("refuses the Trash and anything inside it", async () => {
-    await expectRejected(".nas-mcp-trash/2026-01-01/gone.txt");
-    await expectRejected(".nas-mcp-trash/new.txt");
-    expect(await readFile(path.join(s.root, ".nas-mcp-trash/2026-01-01/gone.txt"), "utf8")).toBe("x");
+    await expectRejected("m/.nas-mcp-trash/2026-01-01/gone.txt");
+    await expectRejected("m/.nas-mcp-trash/new.txt");
+    expect(await readFile(path.join(s.root, "m/.nas-mcp-trash/2026-01-01/gone.txt"), "utf8")).toBe("x");
   });
 
   it("refuses other Hidden Entries, including custom patterns", async () => {
-    await expectRejected("docs/@eaDir/x.txt");
-    await expectRejected("#recycle/x.txt");
-    await expectRejected("private/diary.md");
+    await expectRejected("m/docs/@eaDir/x.txt");
+    await expectRejected("m/#recycle/x.txt");
+    await expectRejected("m/private/diary.md");
   });
 
   it("refuses the Root itself, `..` and absolute paths", async () => {
     await expectRejected("");
-    await expectRejected("docs/../../x.txt");
-    await expectRejected(path.join(s.root, "docs", "abs.txt"));
+    await expectRejected("m/docs/../../x.txt");
+    await expectRejected(path.join(s.root, "m/docs", "abs.txt"));
   });
 
   it("refuses to write through a symlinked folder that leaves the Root", async () => {
-    await expectRejected("leakdir/new.txt");
+    await expectRejected("m/leakdir/new.txt");
     expect(await readdir(outside)).toEqual(["secret.txt"]);
   });
 
   it("refuses to overwrite through a symlink to a file outside the Root", async () => {
-    await expectRejected("leak.txt");
+    await expectRejected("m/leak.txt");
     expect(await readFile(path.join(outside, "secret.txt"), "utf8")).toBe("top secret");
   });
 
   it("refuses to write through a dangling symlink", async () => {
-    await expectRejected("dangling.txt", false);
+    await expectRejected("m/dangling.txt", false);
     expect(await readdir(s.root)).not.toContain("nowhere.txt");
   });
 
   it("overwriting through an in-Root symlink replaces the target file and trashes its old version", async () => {
-    const r = await s.call("write", { path: "alias.md", content: "real v2", overwrite: true });
+    const r = await s.call("write", { path: "m/alias.md", content: "real v2", overwrite: true });
     expect(r.isError, textOf(r)).toBeFalsy();
-    expect(await readFile(path.join(s.root, "docs/real.md"), "utf8")).toBe("real v2");
+    expect(await readFile(path.join(s.root, "m/docs/real.md"), "utf8")).toBe("real v2");
     const trashed = (await trashFiles(s.root)).filter((f) => f.content === "real v1");
     expect(trashed.map((f) => f.path)).toEqual([expect.stringMatching(/^\d{4}-\d{2}-\d{2}\/docs\/real\.md$/)]);
   });

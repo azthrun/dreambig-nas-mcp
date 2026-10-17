@@ -10,12 +10,13 @@ export const moveTool = defineTool({
   name: "move",
   title: "Move or rename",
   description:
-    "Move or rename a file or folder inside the Root; missing parent folders of the target are created. Fails if " +
+    "Move or rename a file or folder within one Mount; missing parent folders of the target are created. Moving " +
+    "between Mounts is not supported (read, write and delete instead). Fails if " +
     "the target exists unless `overwrite: true`, in which case the replaced item is moved to the Trash " +
     "(recoverable by the NAS owner). A symlink is moved as the link itself.",
   inputSchema: {
-    from: z.string().describe('Root-relative Path of the file or folder to move, e.g. "notes/draft.md"'),
-    to: z.string().describe('Root-relative Path it should have afterwards, e.g. "archive/draft.md"'),
+    from: z.string().describe('Root-relative Path of the file or folder to move, e.g. "docs/notes/draft.md"'),
+    to: z.string().describe('Root-relative Path it should have afterwards, e.g. "docs/archive/draft.md"'),
     overwrite: z.boolean().optional().describe("Replace an existing target (it goes to Trash). Default false."),
   },
   outputSchema: {
@@ -29,6 +30,15 @@ export const moveTool = defineTool({
     // Located as itself: an existing symlink at the target is replaced, not written through.
     const target = await sandbox.locateForCreate(to);
 
+    const [fromMount, toMount] = [source.selfPath, target.selfPath].map((p) => p.split("/")[0]);
+    if (fromMount !== toMount) {
+      throw new ToolError(
+        "invalid",
+        `cannot move ${source.path} to ${target.path}: they are in different Mounts (${fromMount}, ${toMount}); ` +
+          "read, write and delete instead",
+        [source.path, target.path],
+      );
+    }
     if (target.selfAbs === source.selfAbs) {
       throw new ToolError("invalid", `${source.path} and ${target.path} are the same entry`, [source.path, target.path]);
     }

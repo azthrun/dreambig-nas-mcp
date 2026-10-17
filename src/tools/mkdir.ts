@@ -9,9 +9,9 @@ export const mkdirTool = defineTool({
   name: "mkdir",
   title: "Create folder",
   description:
-    "Create a folder inside the Root, including any missing parent folders. Succeeds without changes if the folder already exists.",
+    "Create a folder inside a Mount (not in a read-only one), including any missing parent folders. Succeeds without changes if the folder already exists.",
   inputSchema: {
-    path: z.string().describe('Root-relative Path of the folder, e.g. "projects/2026"'),
+    path: z.string().describe('Root-relative Path of the folder, e.g. "docs/projects/2026"'),
   },
   outputSchema: {
     path: z.string(),

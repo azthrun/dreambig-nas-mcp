@@ -95,7 +95,7 @@ export const readTool = defineTool({
     "PDF returns its extracted text. Images (PNG, JPEG, GIF, WebP, HEIC, AVIF, TIFF) return image content. " +
     "Any other binary file returns metadata only. Files over the size limit return a too_large error.",
   inputSchema: {
-    path: z.string().describe('Root-relative Path, e.g. "notes/plan.md"'),
+    path: z.string().describe('Root-relative Path, e.g. "docs/notes/plan.md"'),
     offset: z.number().int().min(1).optional().describe("Text files: first line to return (1-based)"),
     limit: z.number().int().min(1).optional().describe("Text files: maximum number of lines to return"),
   },

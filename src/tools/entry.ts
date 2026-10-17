@@ -8,6 +8,7 @@ export const entrySchema = z.object({
   type: z.enum(["file", "folder", "other"]),
   size: z.number().describe("Bytes (0 for folders)"),
   modified: z.string().describe("ISO 8601"),
+  readOnly: z.boolean().optional().describe("True on a read-only Mount: nothing inside it can be changed"),
 });
 export type Entry = z.infer<typeof entrySchema>;
 
@@ -18,5 +19,6 @@ export function toEntry(c: Child): Entry {
     type: entryType(c.stats),
     size: c.stats.isFile() ? c.stats.size : 0,
     modified: c.stats.mtime.toISOString(),
+    ...(c.readOnly ? { readOnly: true } : {}),
   };
 }

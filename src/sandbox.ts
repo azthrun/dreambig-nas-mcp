@@ -1,31 +1,28 @@
 /**
  * Root sandbox: the only module that turns agent-supplied Paths into filesystem
  * locations. Owns absolute-path / `..` rejection, symlink resolution + escape
- * checks, and Hidden Entry matching. Tools must go through it.
+ * checks, Hidden Entry matching, and Mount rules (ADR-0003). Tools must go through it.
  *
- * - `resolve(path)`        an existing entry (follows symlinks, must stay in Root)
+ * - `resolve(path)`        an existing entry (follows symlinks, must stay in a Mount)
+ * - `resolveForChange(path)` same, for an entry about to be changed in place (edit)
  * - `resolveEntry(path)`   an existing entry as itself (move/delete source; symlink = the link)
  * - `resolveForCreate(path)` an entry that may not exist yet (for write/mkdir targets)
  * - `locateForCreate(path)` same, located as itself (move target)
  * - `children(dir)`        visible children of a folder (Hidden Entries and
  *                          out-of-Root / broken symlinks are skipped)
  * - `isHidden(path)`       Hidden Entry check on a normalized Root-relative Path
+ * - `mountOf(path)`        the Mount a real Root-relative Path is in
+ *
+ * Everything that changes the Root (`resolveForChange`, `resolveEntry`,
+ * `resolveForCreate`, `locateForCreate`) refuses the top level (the Root itself
+ * and the Mounts) and read-only Mounts, judged by the real location.
  */
 import type { Stats } from "node:fs";
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import type { Config } from "./config.js";
+import type { Config, Mount } from "./config.js";
 import { ToolError } from "./errors.js";
-
-/** Synology system entries, hidden at any depth. */
-export const DEFAULT_HIDDEN_NAMES = ["@eaDir", "#recycle", "#snapshot", ".DS_Store"];
-
-/**
- * Canonical form for Hidden Entry matching: Unicode NFC, lower case. Clients
- * (macOS especially) may send decomposed (NFD) names, and the NAS share is
- * typically case-insensitive over SMB, so `@EADIR` must not slip past `@eaDir`.
- */
-const fold = (s: string): string => s.normalize("NFC").toLowerCase();
+import { fold, hiddenMatcher } from "./hidden.js";
 
 /** Entry type as reported to agents (symlinks are reported as their target). */
 export const entryType = (s: Stats): "file" | "folder" | "other" =>
@@ -56,6 +53,8 @@ export interface Child extends Resolved {
   /** Stats of the target (symlinks followed). */
   stats: Stats;
   isSymlink: boolean;
+  /** Set on a read-only Mount (children of the Root only). */
+  readOnly?: true;
 }
 
 function errnoCode(err: unknown): string | undefined {
@@ -64,16 +63,21 @@ function errnoCode(err: unknown): string | undefined {
 
 export class Sandbox {
   readonly root: string;
-  /** Folded (see `fold`) Trash folder name, built-in hidden names and extra patterns. */
+  /** Folded (see `fold`) Trash folder name. */
   private readonly trashName: string;
-  private readonly hiddenNames: string[];
-  private readonly extraPatterns: string[];
+  private readonly hiddenByName: (rel: string) => boolean;
+  private readonly mounts: Map<string, Mount>;
 
   constructor(config: Config) {
     this.root = config.root;
     this.trashName = fold(config.trashDirName);
-    this.hiddenNames = DEFAULT_HIDDEN_NAMES.map(fold);
-    this.extraPatterns = config.extraHiddenPatterns.map(fold);
+    this.hiddenByName = hiddenMatcher(config.extraHiddenPatterns);
+    this.mounts = new Map(config.mounts.map((m) => [m.name, m]));
+  }
+
+  /** The Mount a real Root-relative Path is in (its first segment), if any. */
+  mountOf(realRel: string): Mount | undefined {
+    return this.mounts.get(realRel.split("/")[0]);
   }
 
   /** Parse an agent-supplied Path into segments, rejecting absolute paths and `..`. */
@@ -95,18 +99,10 @@ export class Sandbox {
    * Matching is case-insensitive and after Unicode NFC normalisation.
    */
   isHidden(rel: string): boolean {
-    if (rel === "") return false;
-    const segs = fold(rel).split("/");
-    for (let i = 0; i < segs.length; i++) {
-      const name = segs[i];
-      if (this.hiddenNames.includes(name)) return true;
-      if (i === 0 && name === this.trashName) return true;
-      const prefix = segs.slice(0, i + 1).join("/");
-      for (const pattern of this.extraPatterns) {
-        if (pattern.includes("/") ? path.matchesGlob(prefix, pattern) : path.matchesGlob(name, pattern)) return true;
-      }
-    }
-    return false;
+    if (this.hiddenByName(rel)) return true;
+    // The Trash sits at the top of each Mount: `<mount>/<trash>/...`.
+    const segs = rel.split("/");
+    return segs.length >= 2 && fold(segs[1]) === this.trashName;
   }
 
   /** Root-relative Path of a real absolute location, or null if it is outside the Root. */
@@ -116,12 +112,34 @@ export class Sandbox {
     return real.slice(this.root.length + 1).split(path.sep).join("/");
   }
 
-  /** Check a real location is inside the Root and not a Hidden Entry; returns its Root-relative Path. */
+  /** Check a real location is the Root or inside a Mount, and not a Hidden Entry; returns its Root-relative Path. */
   private checkReal(real: string, rel: string): string {
     const realRel = this.relInsideRoot(real);
     if (realRel === null) throw new ToolError("forbidden", `${rel} resolves outside the Root`, [rel]);
+    if (realRel !== "" && !this.mountOf(realRel)) {
+      throw new ToolError("forbidden", `${rel} is not inside a Mount; Paths start with a Mount: ${this.mountNames()}`, [rel]);
+    }
     if (this.isHidden(realRel)) throw new ToolError("forbidden", `${rel} is a Hidden Entry`, [rel]);
     return realRel;
+  }
+
+  private mountNames(): string {
+    return [...this.mounts.keys()].join(", ");
+  }
+
+  /** Refuse changing a real Root-relative Path: the top level (Root, Mounts) or anything in a read-only Mount. */
+  private checkWritable(realRel: string, rel: string): void {
+    if (!realRel.includes("/")) {
+      throw new ToolError(
+        "forbidden",
+        realRel === ""
+          ? "the Root itself cannot be changed"
+          : `${rel} is a Mount: Mounts cannot be created, renamed, replaced or deleted; work inside one (${this.mountNames()})`,
+        [rel],
+      );
+    }
+    const mount = this.mountOf(realRel)!;
+    if (mount.readOnly) throw new ToolError("forbidden", `${rel} is in the read-only Mount ${mount.name}`, [rel]);
   }
 
   /** Resolve an existing entry. Throws not_found / forbidden. */
@@ -143,6 +161,13 @@ export class Sandbox {
     return { path: rel, abs, real };
   }
 
+  /** Resolve an existing entry that is about to be changed in place (edit). Refuses the top level and read-only Mounts. */
+  async resolveForChange(input: string): Promise<Resolved> {
+    const resolved = await this.resolve(input);
+    this.checkWritable(this.relInsideRoot(resolved.real)!, resolved.path);
+    return resolved;
+  }
+
   /**
    * Resolve an existing entry to be moved or trashed as itself (move/delete source).
    * Like `resolve`, but also locates the entry through its real parent folder without
@@ -153,7 +178,9 @@ export class Sandbox {
     const resolved = await this.resolve(input);
     if (resolved.path === "") throw new ToolError("forbidden", "the Root itself cannot be moved or deleted", [""]);
     const selfAbs = path.join(await realpath(path.dirname(resolved.abs)), path.basename(resolved.abs));
-    return { ...resolved, selfAbs, selfPath: this.checkReal(selfAbs, resolved.path) };
+    const selfPath = this.checkReal(selfAbs, resolved.path);
+    this.checkWritable(selfPath, resolved.path);
+    return { ...resolved, selfAbs, selfPath };
   }
 
   /**
@@ -162,11 +189,13 @@ export class Sandbox {
    * folder may not exist yet.
    */
   async locateForCreate(input: string): Promise<Located> {
-    const resolved = await this.resolveForCreate(input);
+    const resolved = await this.locate(input);
     const parent = path.posix.dirname(resolved.path);
-    const parentReal = parent === "." ? this.root : (await this.resolveForCreate(parent)).real;
+    const parentReal = parent === "." ? this.root : (await this.locate(parent)).real;
     const selfAbs = path.join(parentReal, path.basename(resolved.abs));
-    return { ...resolved, selfAbs, selfPath: this.checkReal(selfAbs, resolved.path) };
+    const selfPath = this.checkReal(selfAbs, resolved.path);
+    this.checkWritable(selfPath, resolved.path);
+    return { ...resolved, selfAbs, selfPath };
   }
 
   /**
@@ -174,9 +203,16 @@ export class Sandbox {
    * existing ancestor must resolve inside the Root, and the final real location
    * (that ancestor's real path + the remaining segments) must not be a Hidden
    * Entry. If the entry itself exists it is resolved like `resolve`. Throws
-   * forbidden for the Root itself.
+   * forbidden for the top level and read-only Mounts.
    */
   async resolveForCreate(input: string): Promise<Resolved> {
+    const resolved = await this.locate(input);
+    this.checkWritable(this.relInsideRoot(resolved.real)!, resolved.path);
+    return resolved;
+  }
+
+  /** `resolveForCreate` without the writable check (also used for a move target's parent, which may be a Mount). */
+  private async locate(input: string): Promise<Resolved> {
     const segs = this.segments(input);
     const rel = segs.join("/");
     if (rel === "") throw new ToolError("forbidden", "the Root itself cannot be replaced", [rel]);
@@ -236,9 +272,11 @@ export class Sandbox {
     }
     dirents.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     const out: Child[] = [];
+    const atRoot = dir.real === this.root;
     for (const d of dirents) {
       const rel = dir.path ? `${dir.path}/${d.name}` : d.name;
       if (this.isHidden(rel)) continue;
+      if (atRoot && !this.mounts.has(d.name)) continue; // appeared after startup: not a Mount
       const abs = path.join(dir.abs, d.name);
       const inReal = path.join(dir.real, d.name);
       try {
@@ -246,7 +284,9 @@ export class Sandbox {
         const real = isSymlink ? await realpath(inReal) : inReal;
         const realRel = this.relInsideRoot(real);
         if (realRel === null || this.isHidden(realRel)) continue; // escapes Root or is a Hidden Entry
-        out.push({ path: rel, name: d.name, abs, real, stats: await (isSymlink ? stat : lstat)(real), isSymlink });
+        const stats = await (isSymlink ? stat : lstat)(real);
+        const readOnly = atRoot && this.mounts.get(d.name)!.readOnly ? { readOnly: true as const } : {};
+        out.push({ path: rel, name: d.name, abs, real, stats, isSymlink, ...readOnly });
       } catch {
         // Broken symlink or entry vanished meanwhile: skip.
       }

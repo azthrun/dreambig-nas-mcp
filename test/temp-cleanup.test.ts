@@ -11,11 +11,11 @@ describe("leftover temp files", () => {
   beforeAll(async () => {
     s = await startServer({
       layout: {
-        "notes/plan.md": "plan",
-        "notes/.plan.md.nas-mcp-tmp-0123456789ab": "half-written",
-        ".top.txt.nas-mcp-tmp-abcdef012345": "half",
-        "notes/.keep.nas-mcp-tmp-notours": "not a temp file name we generate",
-        "notes/regular.nas-mcp-tmp-0123456789ab": "no leading dot",
+        "m/notes/plan.md": "plan",
+        "m/notes/.plan.md.nas-mcp-tmp-0123456789ab": "half-written",
+        "m/.top.txt.nas-mcp-tmp-abcdef012345": "half",
+        "m/notes/.keep.nas-mcp-tmp-notours": "not a temp file name we generate",
+        "m/notes/regular.nas-mcp-tmp-0123456789ab": "no leading dot",
       },
       env: { NAS_MCP_TRASH_RETENTION_DAYS: "0" },
     });
@@ -25,15 +25,15 @@ describe("leftover temp files", () => {
   it("removes them at startup and writes one audit line listing them", async () => {
     const line = await s.waitForAudit((l) => l.action === "temp_cleanup");
     expect(line.result).toBe("ok");
-    expect((line.removed as string[]).sort()).toEqual([".top.txt.nas-mcp-tmp-abcdef012345", "notes/.plan.md.nas-mcp-tmp-0123456789ab"]);
-    expect(await exists(path.join(s.root, "notes/.plan.md.nas-mcp-tmp-0123456789ab"))).toBe(false);
-    expect(await exists(path.join(s.root, ".top.txt.nas-mcp-tmp-abcdef012345"))).toBe(false);
+    expect((line.removed as string[]).sort()).toEqual(["m/.top.txt.nas-mcp-tmp-abcdef012345", "m/notes/.plan.md.nas-mcp-tmp-0123456789ab"]);
+    expect(await exists(path.join(s.root, "m/notes/.plan.md.nas-mcp-tmp-0123456789ab"))).toBe(false);
+    expect(await exists(path.join(s.root, "m/.top.txt.nas-mcp-tmp-abcdef012345"))).toBe(false);
   });
 
   it("leaves real files alone", async () => {
     await s.waitForAudit((l) => l.action === "temp_cleanup");
-    expect(await readFile(path.join(s.root, "notes/plan.md"), "utf8")).toBe("plan");
-    expect(await exists(path.join(s.root, "notes/.keep.nas-mcp-tmp-notours"))).toBe(true);
-    expect(await exists(path.join(s.root, "notes/regular.nas-mcp-tmp-0123456789ab"))).toBe(true);
+    expect(await readFile(path.join(s.root, "m/notes/plan.md"), "utf8")).toBe("plan");
+    expect(await exists(path.join(s.root, "m/notes/.keep.nas-mcp-tmp-notours"))).toBe(true);
+    expect(await exists(path.join(s.root, "m/notes/regular.nas-mcp-tmp-0123456789ab"))).toBe(true);
   });
 });

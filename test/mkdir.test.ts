@@ -6,41 +6,41 @@ import { startServer, textOf, type TestServer } from "./harness.js";
 describe("mkdir", () => {
   let s: TestServer;
   beforeAll(async () => {
-    s = await startServer({ layout: { "photos/": "", "file.txt": "keep" } });
+    s = await startServer({ layout: { "m/photos/": "", "m/file.txt": "keep" } });
   });
   afterAll(async () => {
     await s.stop();
   });
 
   it("creates nested folders", async () => {
-    const r = await s.call("mkdir", { path: "projects/2026/q4" });
+    const r = await s.call("mkdir", { path: "m/projects/2026/q4" });
     expect(r.isError, textOf(r)).toBeFalsy();
-    expect(r.structuredContent).toMatchObject({ path: "projects/2026/q4", created: true });
-    expect((await stat(path.join(s.root, "projects/2026/q4"))).isDirectory()).toBe(true);
+    expect(r.structuredContent).toMatchObject({ path: "m/projects/2026/q4", created: true });
+    expect((await stat(path.join(s.root, "m/projects/2026/q4"))).isDirectory()).toBe(true);
   });
 
   it("succeeds without changes when the folder already exists", async () => {
-    const r = await s.call("mkdir", { path: "photos" });
+    const r = await s.call("mkdir", { path: "m/photos" });
     expect(r.isError, textOf(r)).toBeFalsy();
-    expect(r.structuredContent).toMatchObject({ path: "photos", created: false });
+    expect(r.structuredContent).toMatchObject({ path: "m/photos", created: false });
   });
 
   it("refuses when a file is in the way", async () => {
-    expect(textOf(await s.call("mkdir", { path: "file.txt" }))).toMatch(/^exists/);
-    expect(textOf(await s.call("mkdir", { path: "file.txt/sub" }))).toMatch(/^not_a_folder/);
-    expect(await readFile(path.join(s.root, "file.txt"), "utf8")).toBe("keep");
+    expect(textOf(await s.call("mkdir", { path: "m/file.txt" }))).toMatch(/^exists/);
+    expect(textOf(await s.call("mkdir", { path: "m/file.txt/sub" }))).toMatch(/^not_a_folder/);
+    expect(await readFile(path.join(s.root, "m/file.txt"), "utf8")).toBe("keep");
   });
 
-  it("refuses Hidden Entries and the Root itself", async () => {
-    for (const p of [".nas-mcp-trash/x", "@eaDir", ""]) {
+  it("refuses Hidden Entries, the Root itself and a Mount", async () => {
+    for (const p of ["m/.nas-mcp-trash/x", "m/@eaDir", "", "m"]) {
       expect(textOf(await s.call("mkdir", { path: p }))).toMatch(/^forbidden/);
     }
   });
 
   it("emits an audit line", async () => {
-    await s.call("mkdir", { path: "audited/a" });
-    const line = await s.waitForAudit((l) => l.tool === "mkdir" && (l.paths as string[])[0] === "audited/a");
-    expect(line).toMatchObject({ result: "ok", paths: ["audited/a"] });
+    await s.call("mkdir", { path: "m/audited/a" });
+    const line = await s.waitForAudit((l) => l.tool === "mkdir" && (l.paths as string[])[0] === "m/audited/a");
+    expect(line).toMatchObject({ result: "ok", paths: ["m/audited/a"] });
   });
 
   it("is not a Destructive Operation, while write and edit are", async () => {

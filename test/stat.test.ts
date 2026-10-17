@@ -18,17 +18,17 @@ describe("stat", () => {
   beforeAll(async () => {
     s = await startServer({
       layout: {
-        "notes/plan.md": "# Plan\nnaïve café ✓\n",
-        "empty.txt": "",
-        "photo.png": PNG,
-        "pic.jpg": JPEG,
-        "doc.pdf": PDF,
-        "blob.bin": BINARY,
-        "folder/": "",
+        "m/notes/plan.md": "# Plan\nnaïve café ✓\n",
+        "m/empty.txt": "",
+        "m/photo.png": PNG,
+        "m/pic.jpg": JPEG,
+        "m/doc.pdf": PDF,
+        "m/blob.bin": BINARY,
+        "m/folder/": "",
       },
       setup: async (root) => {
         const t = new Date("2023-05-06T07:08:09Z");
-        await utimes(path.join(root, "notes/plan.md"), t, t);
+        await utimes(path.join(root, "m/notes/plan.md"), t, t);
       },
     });
   });
@@ -43,9 +43,9 @@ describe("stat", () => {
   };
 
   it("returns type, size, timestamps and content kind for a text file", async () => {
-    const info = await st("notes/plan.md");
+    const info = await st("m/notes/plan.md");
     expect(info).toMatchObject({
-      path: "notes/plan.md",
+      path: "m/notes/plan.md",
       type: "file",
       size: Buffer.byteLength("# Plan\nnaïve café ✓\n"),
       modified: "2023-05-06T07:08:09.000Z",
@@ -55,27 +55,27 @@ describe("stat", () => {
   });
 
   it("detects content kinds", async () => {
-    expect((await st("empty.txt")).contentKind).toBe("text");
-    expect(await st("photo.png")).toMatchObject({ contentKind: "image", mimeType: "image/png" });
-    expect(await st("pic.jpg")).toMatchObject({ contentKind: "image", mimeType: "image/jpeg" });
-    expect(await st("doc.pdf")).toMatchObject({ contentKind: "pdf", mimeType: "application/pdf" });
-    expect((await st("blob.bin")).contentKind).toBe("binary");
+    expect((await st("m/empty.txt")).contentKind).toBe("text");
+    expect(await st("m/photo.png")).toMatchObject({ contentKind: "image", mimeType: "image/png" });
+    expect(await st("m/pic.jpg")).toMatchObject({ contentKind: "image", mimeType: "image/jpeg" });
+    expect(await st("m/doc.pdf")).toMatchObject({ contentKind: "pdf", mimeType: "application/pdf" });
+    expect((await st("m/blob.bin")).contentKind).toBe("binary");
   });
 
   it("stats a folder (no content kind)", async () => {
-    const info = await st("folder");
+    const info = await st("m/folder");
     expect(info.type).toBe("folder");
     expect(info.contentKind).toBeUndefined();
   });
 
   it("returns not_found for a missing Path", async () => {
-    const r = await s.call("stat", { path: "nope.txt" });
+    const r = await s.call("stat", { path: "m/nope.txt" });
     expect(r.isError).toBe(true);
     expect(textOf(r)).toMatch(/^not_found/);
   });
 
   it("is also returned as JSON text", async () => {
-    const r = await s.call("stat", { path: "photo.png" });
+    const r = await s.call("stat", { path: "m/photo.png" });
     expect(JSON.parse(textOf(r))).toEqual(r.structuredContent);
   });
 });

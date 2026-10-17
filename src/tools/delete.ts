@@ -6,10 +6,10 @@ export const deleteTool = defineTool({
   name: "delete",
   title: "Delete file or folder",
   description:
-    "Delete a file or folder (with its contents) inside the Root. Nothing is destroyed: the entry is moved to the " +
+    "Delete a file or folder (with its contents) inside a Mount (not in a read-only one). Nothing is destroyed: the entry is moved to the " +
     "Trash, where the NAS owner can recover it until it is purged.",
   inputSchema: {
-    path: z.string().describe('Root-relative Path of the file or folder, e.g. "notes/old.md"'),
+    path: z.string().describe('Root-relative Path of the file or folder, e.g. "docs/notes/old.md"'),
   },
   outputSchema: {
     path: z.string().describe("The deleted Path (now in the Trash)"),

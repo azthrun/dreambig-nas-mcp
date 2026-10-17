@@ -42,7 +42,7 @@ export const listTool = defineTool({
     `List a folder inside the Root. One level deep by default; set depth (max ${MAX_DEPTH}) to include sub-folders. ` +
     `Returns up to ${PAGE_SIZE} entries per call; if nextCursor is present, call again with the same path, depth and that cursor.`,
   inputSchema: {
-    path: z.string().default("").describe('Root-relative folder Path, e.g. "notes/2026". Empty for the Root.'),
+    path: z.string().default("").describe('Root-relative folder Path, e.g. "docs/notes/2026". Empty for the Root, which lists the Mounts (the top-level folders every Path starts with).'),
     depth: z.number().int().min(1).max(MAX_DEPTH).default(1).describe(`Levels to descend (1-${MAX_DEPTH})`),
     cursor: z.string().optional().describe("nextCursor from a previous call"),
   },

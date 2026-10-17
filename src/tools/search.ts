@@ -65,7 +65,7 @@ export const searchTool = defineTool({
       .optional()
       .describe("Literal text to look for inside UTF-8 text files whose name matches `name`. Omit for a name-only search."),
     ignoreCase: z.boolean().default(false).describe("Case-insensitive content match"),
-    path: z.string().default("").describe('Root-relative folder to search in, e.g. "notes/2026". Empty for the whole Root.'),
+    path: z.string().default("").describe('Root-relative folder to search in, e.g. "docs/notes/2026". Empty for every Mount.'),
   },
   outputSchema: {
     entries: z.array(entrySchema).optional().describe("Name-search results (when `content` is omitted)"),

@@ -2,13 +2,14 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { TRASH_DIR_NAME } from "../src/config.js";
+import { DEFAULT_MOUNT } from "./harness.js";
 
-/** Name of the Trash folder at the top of the Root. */
+/** Name of the Trash folder at the top of each Mount. */
 export const TRASH_DIR = TRASH_DIR_NAME;
 
-/** Every file in the Trash, as Trash-relative Paths (sorted) with their text content. */
-export async function trashFiles(root: string): Promise<{ path: string; content: string }[]> {
-  const trash = path.join(root, TRASH_DIR);
+/** Every file in a Mount's Trash, as Trash-relative Paths (sorted) with their text content. */
+export async function trashFiles(root: string, mount = DEFAULT_MOUNT): Promise<{ path: string; content: string }[]> {
+  const trash = path.join(root, mount, TRASH_DIR);
   let entries;
   try {
     entries = await readdir(trash, { recursive: true, withFileTypes: true });
