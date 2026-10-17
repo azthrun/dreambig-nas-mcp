@@ -3,7 +3,6 @@
 ## Safety
 
 - NAS operations that delete, move, or overwrite files → confirm first, list exactly what is affected.
-- NAS host/credentials via env vars only; keep a `.env.example` with placeholder values.
 
 ## Agent skills
 

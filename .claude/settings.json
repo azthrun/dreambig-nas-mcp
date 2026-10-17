@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "ask": [
+      "mcp__nas__delete",
+      "mcp__nas__move",
+      "mcp__nas__write",
+      "mcp__nas__edit"
+    ]
+  }
+}

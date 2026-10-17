@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+scripts/check-private.sh
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --staged --no-banner --redact
+fi

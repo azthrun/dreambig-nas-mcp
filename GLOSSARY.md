@@ -13,7 +13,7 @@ A location written relative to the Root, using `/` separators (e.g. `notes/2026/
 _Avoid_: Full path, NAS path
 
 **Trash**:
-A server-owned folder inside the Root where deleted and overwritten files are moved instead of being destroyed.
+A server-owned folder inside the Root where deleted and overwritten files are moved instead of being destroyed. Never overwrites its own entries: a name clash gets a new name (`src/trash.ts`).
 _Avoid_: Recycle bin, `#recycle` (that is Synology's own, separate bin)
 
 **Hidden Entry**:
