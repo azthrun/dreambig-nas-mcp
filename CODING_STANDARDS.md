@@ -1,10 +1,11 @@
 # Coding standards
 
-Read during review. Terms (Root, Path, Trash, Hidden Entry, Destructive Operation) are defined in `GLOSSARY.md`; decisions in `docs/adr/`. Typecheck, tests and the gitleaks scan run in CI; this file covers only what they cannot judge.
+Read during review. Terms (Root, Mount, Path, Trash, Hidden Entry, Destructive Operation) are defined in `GLOSSARY.md`; decisions in `docs/adr/`. Typecheck, tests and the gitleaks scan run in CI; this file covers only what they cannot judge.
 
 ## Filesystem safety
 
 - **Every agent-supplied Path goes through `Sandbox`** (`src/sandbox.ts`). A tool that calls `node:fs` on a string it built from input, without a `Resolved`/`Located` from the sandbox, is a hard violation.
+- **Changes go through the Sandbox's writable lookups.** A tool that changes content locates it with `resolveForChange`, `resolveEntry`, `resolveForCreate` or `locateForCreate`, which refuse the top level (the Root, the Mounts) and read-only Mounts (ADR-0003). A mutating tool that uses plain `resolve` bypasses those checks.
 - **Destructive Operations never destroy data.** Anything removed or replaced goes to the Trash via `Trash` (`src/trash.ts`), which never overwrites an existing Trash entry: on a name clash it picks a new name. Code that unlinks, `rm`s, or renames over existing content outside `trash.ts` / `trash-purge.ts` / temp cleanup breaks ADR-0001.
 - **Every change to the Root runs under the write lock** (`src/write-lock.ts`). The registry (`src/mcp.ts`) locks any tool whose `readOnlyHint` is not true, so a mutating tool marked read-only escapes the lock; background jobs that touch the Root call `withWriteLock` themselves. Re-check the resolved parent (`Sandbox.recheck`) right before renaming.
 - **Text writes are atomic** via `src/atomic-write.ts` (temp file in the same folder, fsync, rename).

@@ -125,8 +125,8 @@ function validateRoot(raw: string): string {
 /**
  * Discover the Mounts: every entry at the top of the Root must be a folder that
  * is its own mount point (unless `requireMountPoints` is off, for local runs and
- * tests) with a usable name. Fails fast on anything else, so a typo in a compose
- * volume line or the old single-folder layout is caught at startup.
+ * tests) with a usable name. Fails fast on anything else, so a nested container
+ * path in a compose volume line or the old single-folder layout is caught at startup.
  */
 function discoverMounts(root: string, extraHiddenPatterns: string[], requireMountPoints: boolean): Mount[] {
   const rootDev = statSync(root).dev;

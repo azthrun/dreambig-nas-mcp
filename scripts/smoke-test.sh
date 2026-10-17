@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Image smoke test (run by CI; needs Docker).
 # Usage: scripts/smoke-test.sh <image>
-# Starts the image as an arbitrary non-root UID/GID against a temp Root,
+# Starts the image as an arbitrary non-root UID/GID with a temp folder as a read-only Mount,
 # waits for the image HEALTHCHECK to report healthy, then runs smoke-check.sh.
 set -euo pipefail
 
@@ -30,7 +30,7 @@ cid="$(docker run -d \
   --platform linux/amd64 \
   --user "$uid:$gid" \
   -e NAS_MCP_TOKEN="$token" \
-  -v "$root_dir:/data:ro" \
+  -v "$root_dir:/data/smoke:ro" \
   -p 127.0.0.1::8080 \
   "$image")"
 

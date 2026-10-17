@@ -12,12 +12,15 @@ services:
     user: "${NAS_MCP_UID:?set NAS_MCP_UID in .env}:${NAS_MCP_GID:?set NAS_MCP_GID in .env}"
     env_file: .env
     environment:
-      # Fixed inside the container: the Root is always mounted at /data, the server always listens on 8080.
+      # Fixed inside the container: the Mounts are always under /data, the server always listens on 8080.
       NAS_MCP_ROOT: /data
       NAS_MCP_PORT: "8080"
       NAS_MCP_HOST: 0.0.0.0
+    # One line per Mount: <NAS shared folder>:/data/<Mount name>, plus :ro for a read-only Mount.
+    # Agents see each Mount as a top-level folder named <Mount name>. Edit these lines (EXAMPLES).
     volumes:
-      - "${NAS_MCP_ROOT_HOST_PATH:?set NAS_MCP_ROOT_HOST_PATH in .env}:/data"
+      - /volume1/agents:/data/agents
+      # - /volume1/photos:/data/photos:ro
     ports:
       - "${NAS_MCP_HOST_PORT:-8080}:8080"
     healthcheck:

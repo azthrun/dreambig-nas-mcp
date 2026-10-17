@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HTTP smoke checks against a running server whose Root contains smoke-hello.txt.
+# HTTP smoke checks against a running server with a Mount "smoke" containing smoke-hello.txt.
 # Usage: SMOKE_TOKEN=<token> scripts/smoke-check.sh <base-url>
 # Checks: GET /healthz is open and ok; /mcp rejects a missing token;
 # an authenticated `list` tool call sees smoke-hello.txt.
@@ -20,7 +20,7 @@ status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base_url/mcp" \
 echo "smoke: ok: /mcp rejects missing token"
 
 # Stateless server: a tools/call needs no prior initialize/session.
-call='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list","arguments":{"path":""}}}'
+call='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list","arguments":{"path":"smoke"}}}'
 result="$(curl -fsS -X POST "$base_url/mcp" \
   -H "authorization: Bearer $token" \
   -H 'content-type: application/json' \
