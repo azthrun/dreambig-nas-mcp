@@ -1,14 +1,17 @@
 name: CI
 
-# PRs: integration tests + gitleaks history scan + image build + smoke test.
-# main: the same, then the publish job pushes the image to GHCR. Only that job
-# (main pushes only) gets packages: write; PR runs never hold it.
+# PRs and main: integration tests + gitleaks history scan + image build + smoke test.
+# Published GitHub release with a v* tag: the same, then the publish job pushes the
+# image to GHCR. Only that job (v* releases only) gets packages: write; PR and main
+# runs never hold it.
 # No workflow uploads artifacts; caches are kept small (npm cache, min-mode Docker layer cache).
 
 on:
   pull_request:
   push:
     branches: [main]
+  release:
+    types: [published]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -78,7 +81,7 @@ jobs:
 
   publish:
     needs: [image, secrets]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -100,6 +103,21 @@ jobs:
         id: sha
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      # Prereleases get the version and sha tags but never move :latest.
+      - name: Image tags
+        id: tags
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          {
+            echo "list<<EOF"
+            echo "$IMAGE:$VERSION"
+            echo "$IMAGE:sha-${{ steps.sha.outputs.short }}"
+            if [ "$PRERELEASE" != "true" ]; then echo "$IMAGE:latest"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       # Same commit and layer cache as the tested image job, so this is a cache-hit rebuild.
       - name: Build and push image to GHCR
         uses: docker/build-push-action@v6
@@ -107,7 +125,5 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}
+          tags: ${{ steps.tags.outputs.list }}
           cache-from: type=gha,scope=image
