@@ -2,7 +2,8 @@
 # HTTP smoke checks against a running server with a Mount "smoke" containing smoke-hello.txt.
 # Usage: SMOKE_TOKEN=<token> scripts/smoke-check.sh <base-url>
 # Checks: GET /healthz is open and ok; /mcp rejects a missing token;
-# an authenticated `list` tool call sees smoke-hello.txt.
+# an authenticated `list` tool call sees smoke-hello.txt;
+# listing the virtual Root reports the `smoke` Mount (mounted :ro) with readOnly true.
 set -euo pipefail
 
 base_url="${1:?usage: SMOKE_TOKEN=<token> $0 <base-url>}"
@@ -29,3 +30,16 @@ result="$(curl -fsS -X POST "$base_url/mcp" \
 [[ "$result" == *'smoke-hello.txt'* ]] || fail "list result lacks smoke-hello.txt: $result"
 [[ "$result" != *'"isError":true'* ]] || fail "list returned an error: $result"
 echo "smoke: ok: authenticated list tool call"
+
+# The `smoke` Mount is bind-mounted :ro, so listing the virtual Root must flag it read-only.
+# Match the unescaped structuredContent entry (the text copy is escaped JSON, so it cannot match).
+call='{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list","arguments":{"path":""}}}'
+result="$(curl -fsS -X POST "$base_url/mcp" \
+  -H "authorization: Bearer $token" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -d "$call")" || fail "authenticated Root list tools/call failed"
+[[ "$result" != *'"isError":true'* ]] || fail "Root list returned an error: $result"
+ro_entry='"name":"smoke","type":"folder"[^}]*"readOnly":true'
+[[ "$result" =~ $ro_entry ]] || fail "Root list does not report the smoke Mount as readOnly: $result"
+echo "smoke: ok: :ro Mount reported read-only"
