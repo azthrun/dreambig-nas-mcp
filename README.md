@@ -55,7 +55,7 @@ On the Mac: `openssl rand -hex 32`. Copy the 64-character output; it is `NAS_MCP
 
 ### 5. Image access (GHCR)
 
-The image is `ghcr.io/azthrun/dreambig-nas-mcp:latest` (`linux/amd64`), built and pushed by CI on every push to `main`. It contains no secrets.
+The image is `ghcr.io/azthrun/dreambig-nas-mcp:latest` (`linux/amd64`), built and pushed by CI when a GitHub release with a `v*` tag (e.g. `v1.2.0`) is published; each release is also tagged `:<version>` (e.g. `:v1.2.0`). Prereleases get only the version tag, not `:latest`. It contains no secrets.
 
 - **Public package (recommended, no login on the NAS).** Once, on github.com: your profile > **Packages > dreambig-nas-mcp > Package settings > Danger Zone > Change visibility > Public**. Check: on the Mac, `docker pull ghcr.io/azthrun/dreambig-nas-mcp:latest` works without `docker login` (or open `https://github.com/users/azthrun/packages/container/package/dreambig-nas-mcp` in a private browser window).
 - **Private package.** Create a GitHub **classic** personal access token with only the `read:packages` scope (github.com > Settings > Developer settings > Personal access tokens > Tokens (classic) > Generate new token). Then over SSH on the NAS (step 3, option A): `sudo docker login ghcr.io -u <github-user>` and paste the token as the password. Container Manager's engine then uses those credentials for `ghcr.io` pulls.
@@ -225,4 +225,4 @@ npm run typecheck
 NAS_MCP_TOKEN="$(openssl rand -hex 32)" NAS_MCP_ROOT=/tmp/root npm run dev
 ```
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs tests and an image smoke test on every PR, and pushes the image to GHCR from `main`.
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs tests and an image smoke test on every PR, and pushes the image to GHCR only when a GitHub release with a `v*` tag is published.
