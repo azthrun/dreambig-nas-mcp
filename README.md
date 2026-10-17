@@ -3,7 +3,7 @@
 An MCP server that runs in a container on a Synology NAS and lets agents (Claude Code, Claude Desktop) read and manage files inside one NAS folder, the **Root**. Nothing outside the Root is visible.
 
 - Tools: `list`, `stat`, `read` (text, PDF text, images), `search` (name glob + optional content grep), `write`, `edit`, `mkdir`, `move`, `delete`.
-- Transport: Streamable HTTP at `http://<nas>:<port>/mcp`, LAN only, one static bearer token ([ADR-0002](docs/adr/0002-lan-only-static-bearer-token.md)).
+- Transport: Streamable HTTP at `http://<nas>:<port>/mcp`, LAN only (remote access via Tailscale), one static bearer token ([ADR-0002](docs/adr/0002-lan-only-static-bearer-token.md)).
 - Nothing is ever really deleted by an agent: deleted and overwritten content goes to a Trash folder inside the Root ([ADR-0001](docs/adr/0001-delete-moves-to-trash.md)).
 - Vocabulary (Root, Path, Trash, Hidden Entry, Destructive Operation): [GLOSSARY.md](GLOSSARY.md).
 
@@ -90,9 +90,45 @@ Updating later: **Container Manager > Image** shows **Update available** on `ghc
 3. Auth check: `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://192.168.1.10:8080/mcp` prints `401` (no token rejected).
 4. If the container keeps restarting, open its log (**Container > select > Details > Log**). Startup errors read `Config error: ...`, e.g. the token is unset or the Root is missing/unreadable (wrong `NAS_MCP_ROOT_HOST_PATH`, or `nas-mcp` lacks permission on the shared folder).
 
+### 9. Remote access (Tailscale, optional)
+
+To use the server from the Mac away from home, put the NAS and the Mac on a [Tailscale](https://tailscale.com) tailnet. No router port is opened and the server stays unchanged: same port, same bearer token ([ADR-0002](docs/adr/0002-lan-only-static-bearer-token.md)). Only clients that run on the Mac (Claude Code, Claude Desktop via `mcp-remote`) can use it; claude.ai web/mobile and Desktop's built-in Connectors connect from Anthropic's cloud and can't join a tailnet. Below, `<port>` is your `NAS_MCP_HOST_PORT`.
+
+1. **Tailnet.** Open `https://login.tailscale.com/start` and sign in with an account that has 2FA on (GitHub, Google, Apple); that account is the key to the tailnet.
+2. **Mac.** Install Tailscale from the Mac App Store, open it, menu bar icon **> Log in** with the same account, **Allow** the VPN configuration. In its settings tick **Launch at login** (the Mac must be on the tailnet to reach the server, at home too).
+3. **NAS.** Open DSM by its LAN address (`http://192.168.1.10:5000`), not QuickConnect: the package refuses to open over QuickConnect. **Package Center >** search `Tailscale` **> Install > Open**, log in with the same account **> Connect**. Fallback if it won't open: SSH in (step 3, option A), run `sudo tailscale up`, open the printed URL on the Mac.
+4. **Admin console** (`https://login.tailscale.com/admin/machines`):
+   1. NAS row **> ⋯ > Edit machine name** > `nas`.
+   2. NAS row **> ⋯ > Disable key expiry** (otherwise it drops off the tailnet after ~180 days). Leave expiry on for the Mac.
+   3. Note both `100.x.y.z` addresses (NAS and Mac).
+   4. **DNS** tab: **MagicDNS** enabled; note the **Tailnet name** (`<tailnet>.ts.net`). The NAS is now `nas.<tailnet>.ts.net`.
+5. **Access controls** (console **> Access controls > JSON editor**). The default policy lets every device reach every port on every other device. Copy it somewhere as a backup, then replace it with the policy below (fill in the two addresses and `<port>`) and **Save**. Only the Mac can then reach the NAS, only on the server's port; DSM (5000/5001) is not reachable over the tailnet, use the LAN for DSM admin.
+
+   ```json
+   {
+     "hosts": {
+       "macbook": "<mac 100.x.y.z>",
+       "nas": "<nas 100.x.y.z>"
+     },
+     "acls": [
+       { "action": "accept", "src": ["macbook"], "dst": ["nas:<port>"] }
+     ],
+     "ssh": []
+   }
+   ```
+
+6. **Check from the Mac**, once at home and once on another network (e.g. a phone hotspot):
+   - `curl http://nas.<tailnet>.ts.net:<port>/healthz` prints `{"status":"ok"}`.
+   - `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://nas.<tailnet>.ts.net:<port>/mcp` prints `401`.
+   - `curl -m 5 http://nas.<tailnet>.ts.net:5000` times out (the policy blocks DSM).
+   - `Could not resolve host`: wrong tailnet name or MagicDNS off. A fast `Couldn't connect`: the NAS was reached but nothing listens on that port (check `<port>` is your `NAS_MCP_HOST_PORT`, in the policy too). A timeout on `<port>`: the policy blocks it, or the DSM firewall does (allow TCP `<port>` from `100.64.0.0/10`).
+7. **Clients.** Use `http://nas.<tailnet>.ts.net:<port>/mcp` as the URL in [Client setup](#client-setup), at home and away. To switch an existing Claude Code entry: `claude mcp remove nas -s user`, then `claude mcp add` again with the new URL. For Claude Desktop, replace the URL in `claude_desktop_config.json` and restart it.
+
+Plain `http://` is fine here: tailnet traffic is end-to-end encrypted by WireGuard.
+
 ## Client setup
 
-Replace `192.168.1.10:8080` with your NAS IP and `NAS_MCP_HOST_PORT`, and `<token>` with the token from step 4.
+Replace `192.168.1.10:8080` with your NAS IP and `NAS_MCP_HOST_PORT` (or `nas.<tailnet>.ts.net:<port>` with [Tailscale](#9-remote-access-tailscale-optional)), and `<token>` with the token from step 4.
 
 ### Claude Code
 
