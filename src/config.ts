@@ -143,18 +143,19 @@ function discoverMounts(root: string, extraHiddenPatterns: string[], requireMoun
           "e.g. /volume1/docs:/data/docs in compose.yaml (see the README migration section)",
       );
     }
-    if (name.startsWith(".") || reserved.includes(fold(name)) || isHidden(name)) {
-      throw new ConfigError(`Mount name "${name}" is reserved or hidden; mount it under another name`);
-    }
-    const clash = seen.get(fold(name));
-    if (clash) throw new ConfigError(`Mount names "${clash}" and "${name}" differ only in case; rename one`);
-    seen.set(fold(name), name);
+    // Before the name checks, so the old single-folder layout (Trash, #recycle at the top) gets the migration hint.
     if (requireMountPoints && st.dev === rootDev) {
       throw new ConfigError(
         `${abs} is not a mount point; mount a shared folder there in compose.yaml (e.g. /volume1/${name}:${abs}), ` +
           "or remove it. Mounting one folder at NAS_MCP_ROOT itself is the old single-folder layout: see the README migration section",
       );
     }
+    if (name.startsWith(".") || reserved.includes(fold(name)) || isHidden(name)) {
+      throw new ConfigError(`Mount name "${name}" is reserved or hidden; mount it under another name`);
+    }
+    const clash = seen.get(fold(name));
+    if (clash) throw new ConfigError(`Mount names "${clash}" and "${name}" differ only in case; rename one`);
+    seen.set(fold(name), name);
     let readOnly = false;
     let readOnlyWarning: string | undefined;
     try {

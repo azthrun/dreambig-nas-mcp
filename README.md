@@ -233,10 +233,10 @@ All settings are env vars, read at startup; the server refuses to start with a c
 
 v2 serves Mounts instead of one Root folder, and agent Paths now start with the Mount name. With `agents` as your old Root folder:
 
-1. Update the image as in step 7 (**Update available**, or **Action > Stop** then **Build** after pulling `:latest`).
-2. **Container Manager > Project >** `dreambig-nas-mcp` **> Action > Stop**, then open **YAML configurations** (or **Edit**). Replace the old volume line `- "${NAS_MCP_ROOT_HOST_PATH:...}:/data"` with `- /volume1/agents:/data/agents` (your old `NAS_MCP_ROOT_HOST_PATH` value, then `:/data/<Mount name>`). Add a line for any other shared folder (step 1); give `nas-mcp` access to it in DSM (step 2). Save.
+1. **Container Manager > Project >** `dreambig-nas-mcp` **> Action > Stop**. Don't update the image yet (no **Image > Update available**): v2 refuses to start on the old volume line, so the container would keep restarting.
+2. Open **YAML configurations** (or **Edit**). Replace the old volume line `- "${NAS_MCP_ROOT_HOST_PATH:...}:/data"` with `- /volume1/agents:/data/agents` (your old `NAS_MCP_ROOT_HOST_PATH` value, then `:/data/<Mount name>`). Add a line for any other shared folder (step 1); give `nas-mcp` access to it in DSM (step 2). Save.
 3. In the Project folder's `.env` (File Station, **Show hidden files**), delete the `NAS_MCP_ROOT_HOST_PATH` line. Change any `NAS_MCP_HIDDEN_PATTERNS` entry that contains `/` to start with the Mount name (`family/taxes` becomes `agents/family/taxes`).
-4. **Action > Build**, then check health (step 8). The startup log line `"type":"listening"` must list your Mounts.
+4. **Project >** `dreambig-nas-mcp` **> Action > Build**: this pulls the v2 `:latest` image and recreates the container. Then check health (step 8). The startup log line `"type":"listening"` must list your Mounts.
 5. Your existing Trash (`agents/.nas-mcp-trash`) stays where it is and keeps being purged; nothing in it moves.
 6. Paths change for agents: `notes/plan.md` is now `agents/notes/plan.md`. Update any saved prompts, CLAUDE.md notes or scripts that name Paths.
 

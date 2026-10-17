@@ -9,7 +9,7 @@
  * - `resolveForCreate(path)` an entry that may not exist yet (for write/mkdir targets)
  * - `locateForCreate(path)` same, located as itself (move target)
  * - `children(dir)`        visible children of a folder (Hidden Entries and
- *                          out-of-Root / broken symlinks are skipped)
+ *                          out-of-Mount / broken symlinks are skipped)
  * - `isHidden(path)`       Hidden Entry check on a normalized Root-relative Path
  * - `mountOf(path)`        the Mount a real Root-relative Path is in
  *
@@ -283,7 +283,8 @@ export class Sandbox {
         const isSymlink = d.isSymbolicLink();
         const real = isSymlink ? await realpath(inReal) : inReal;
         const realRel = this.relInsideRoot(real);
-        if (realRel === null || this.isHidden(realRel)) continue; // escapes Root or is a Hidden Entry
+        // Escapes the Root, is outside every Mount (a folder that appeared at the top after startup), or is a Hidden Entry.
+        if (realRel === null || (realRel !== "" && !this.mountOf(realRel)) || this.isHidden(realRel)) continue;
         const stats = await (isSymlink ? stat : lstat)(real);
         const readOnly = atRoot && this.mounts.get(d.name)!.readOnly ? { readOnly: true as const } : {};
         out.push({ path: rel, name: d.name, abs, real, stats, isSymlink, ...readOnly });
