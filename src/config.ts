@@ -4,7 +4,7 @@
  * To add a setting: add a field to `Config`, parse it in `loadConfig` with the
  * helpers below, and list it in `.env.example`.
  */
-import { accessSync, constants, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_HIDDEN_NAMES, fold, hiddenMatcher } from "./hidden.js";
 
@@ -14,7 +14,7 @@ export interface Mount {
   name: string;
   /** Real absolute path. */
   abs: string;
-  /** Every change inside it is refused: mounted `:ro`, or the server's user cannot write to it. */
+  /** Every change inside it is refused: mounted `:ro` (EROFS, or `ro` in /proc/self/mountinfo), or the server's user cannot write to it. */
   readOnly: boolean;
   /** Why it is read-only when the mount itself is not `:ro` (logged as a startup warning). */
   readOnlyWarning?: string;
@@ -123,6 +123,30 @@ function validateRoot(raw: string): string {
 }
 
 /**
+ * Whether each mount point is mounted read-only, from /proc/self/mountinfo (Linux;
+ * undefined elsewhere or if unreadable). Needed because access(W_OK) on a `:ro`
+ * bind mount the user also lacks write permission on fails with EACCES, not EROFS.
+ * Later lines shadow earlier ones for the same mount point.
+ */
+function readMountReadOnly(): Map<string, boolean> | undefined {
+  let text: string;
+  try {
+    text = readFileSync("/proc/self/mountinfo", "utf8");
+  } catch {
+    return undefined;
+  }
+  const ro = new Map<string, boolean>();
+  for (const line of text.split("\n")) {
+    // id parent major:minor root mountpoint mountoptions [optional...] - fstype source superoptions
+    const fields = line.split(" ");
+    if (fields.length < 6) continue;
+    const mountPoint = fields[4].replace(/\\([0-7]{3})/g, (_, oct: string) => String.fromCharCode(parseInt(oct, 8)));
+    ro.set(mountPoint, fields[5].split(",").includes("ro"));
+  }
+  return ro;
+}
+
+/**
  * Discover the Mounts: every entry at the top of the Root must be a folder that
  * is its own mount point (unless `requireMountPoints` is off, for local runs and
  * tests) with a usable name. Fails fast on anything else, so a nested container
@@ -134,6 +158,7 @@ function discoverMounts(root: string, extraHiddenPatterns: string[], requireMoun
   const reserved = [...DEFAULT_HIDDEN_NAMES, TRASH_DIR_NAME].map(fold);
   const seen = new Map<string, string>();
   const mounts: Mount[] = [];
+  let mountReadOnly: Map<string, boolean> | undefined | null = null; // null = not read yet
   for (const name of readdirSync(root).sort()) {
     const abs = path.join(root, name);
     const st = lstatSync(abs);
@@ -168,7 +193,10 @@ function discoverMounts(root: string, extraHiddenPatterns: string[], requireMoun
       }
       readOnly = true;
       if ((err as NodeJS.ErrnoException).code !== "EROFS") {
-        readOnlyWarning = "the server's user cannot write to it, so it is read-only; mount it :ro, or grant Read/Write in DSM";
+        if (mountReadOnly === null) mountReadOnly = readMountReadOnly();
+        if (!mountReadOnly?.get(abs)) {
+          readOnlyWarning = "the server's user cannot write to it, so it is read-only; mount it :ro, or grant Read/Write in DSM";
+        }
       }
     }
     mounts.push({ name, abs: realpathSync(abs), readOnly, ...(readOnlyWarning ? { readOnlyWarning } : {}) });
