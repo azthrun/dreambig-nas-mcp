@@ -11,7 +11,7 @@ Target: DS220+ (Intel, `linux/amd64`), DSM 7.4.1, Container Manager.
 
 ## Synology setup
 
-You need: DSM admin access, a Mac on the same LAN, and the NAS's LAN IP address (Control Panel > Network > Network Interface, e.g. `192.168.1.10`). Below, `agents` is the example shared folder used as the Root and `nas-mcp` the example DSM user; use your own names.
+You need: DSM admin access, a Mac on the same LAN, and the NAS's LAN IP address (Control Panel > Network > Network Interface). This README uses `192.168.1.10` as a placeholder; substitute your NAS's actual IP everywhere. Don't use the router/default gateway IP (often `x.x.x.1`); it isn't the NAS. Below, `agents` is the example shared folder used as the Root and `nas-mcp` the example DSM user; use your own names.
 
 ### 1. Choose or create the Root's shared folder
 
@@ -136,6 +136,7 @@ Desktop's built-in Connectors connect from Anthropic's cloud and can't reach a L
    - `--allow-http` is required: `mcp-remote` refuses plain `http://` URLs that aren't localhost without it.
    - `Authorization:${AUTH_HEADER}` (no space after `:`) with the space inside the env var avoids a known argument-splitting bug in some clients.
    - To keep the token out of the process list, use `"--header-file", "/Users/<you>/.config/nas-mcp-headers.txt"` instead of `--header`, with that file containing the single line `Authorization: Bearer <token>` (`chmod 600` it).
+   - Claude Desktop doesn't inherit your shell `PATH`, so a bare `npx` fails if Node isn't in `/usr/local/bin` or `/opt/homebrew/bin` (e.g. installed via nvm). Set `"command"` to the absolute path from `which npx`, and add `"PATH": "<node bin dir>:/usr/bin:/bin"` to `"env"` (the directory containing that `npx`). Update both after upgrading Node.
 3. Quit Claude Desktop completely (Cmd-Q) and reopen. The `nas` tools appear under the tools/connectors menu in a new chat. Logs: `~/Library/Logs/Claude/mcp-server-nas.log`.
 
 ## Settings
