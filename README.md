@@ -138,7 +138,7 @@ To use the server from the Mac away from home, put the NAS and the Mac on a [Tai
    - `Could not resolve host`: wrong tailnet name or MagicDNS off. A fast `Couldn't connect`: the NAS was reached but nothing listens on that port (check `<port>` is your `NAS_MCP_HOST_PORT`, in the policy too). A timeout on `<port>`: the policy blocks it, or the DSM firewall does (allow TCP `<port>` from `100.64.0.0/10`).
 7. **Clients.** Use `http://nas.<tailnet>.ts.net:<port>/mcp` as the URL in [Client setup](#client-setup), at home and away. To switch an existing Claude Code entry: `claude mcp remove nas -s user`, then `claude mcp add` again with the new URL. For Claude Desktop, replace the URL in `claude_desktop_config.json` and restart it.
 
-Plain `http://` is fine here: tailnet traffic is end-to-end encrypted by WireGuard.
+Plain `http://` is fine here: tailnet traffic is end-to-end encrypted by WireGuard. Request path from Mac to container: [docs/network-flow.md](docs/network-flow.md).
 
 ## Client setup
 
